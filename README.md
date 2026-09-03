@@ -3,7 +3,7 @@
 Nuclear Lyrics? goodbye, it is time to welcome Nuclear Mini Player.
 
 
-Nuclear Mini features - 
+Nuclear Mini Player features - 
 
 ```
 metadata cleaning for cleaner titles (automatically removes feat., official, remastered, etc)
