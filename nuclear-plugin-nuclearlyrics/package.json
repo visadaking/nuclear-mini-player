@@ -1,0 +1,14 @@
+{
+  "name": "nuclear-player-plugin",
+  "version": "1.7.6",
+  "description": "Nuclear Mini Player, high performance mini player for Nuclear. LRCLIB lyrics, resizable UI",
+  "author": "visa",
+  "main": "index.js",
+  "nuclear": {
+    "displayName": "Nuclear Lyrics",
+    "categories": [
+      "lyrics",
+      "ui"
+    ]
+  }
+}
