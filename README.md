@@ -5,6 +5,7 @@ Nuclear Lyrics? goodbye, it is time to welcome Nuclear Mini Player.
 
 Nuclear Mini features - 
 
+```
 metadata cleaning for cleaner titles (automatically removes feat., official, remastered, etc)
 
 dynamic split layout mode (artwork and lyrics go side-by-side when panel is resized wide)
@@ -30,8 +31,8 @@ synced lyrics support (click a line to seek the song instantly)
 copy to clipboard and manual refresh buttons
 
 resizable and draggable interface (it stays where you put it)
+```
 
 -------------------------------------------------------------
-
 version 1.7.6 beta as of 03/9/2026
 
