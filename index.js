@@ -4,6 +4,7 @@ const SETTINGS_IDS = {
   CLEAN_LYRICS: "mp_clean_lyrics",
   SHOW_BG_COLOR: "mp_show_bg_color",
   SHOW_QUEUE: "mp_show_queue",
+  AUTOSCROLL: "mp_autoscroll",
   PREFER_SYNCED: "mp_prefer_synced",
   THEME_SYNC: "mp_theme_sync",
   FONT_SIZE: "mp_font_size"
@@ -23,6 +24,7 @@ const AppState = {
     cleanLyrics: true,
     showBgColor: true,
     showQueue: true,
+    autoscroll: true,
     preferSynced: true,
     themeSync: true,
     fontSize: 16
@@ -329,14 +331,13 @@ async function fetchLyrics(artist, title) {
   const cA = cleanMetadataString(artist);
   const cT = cleanMetadataString(title);
 
-  const primaryKey = AppState.preferences.primarySource || "lrclib";
-  const providerOrder = [primaryKey];
-
-  if (AppState.preferences.enableFallbacks) {
-    Object.keys(Fetchers).forEach(key => {
-      if (key !== primaryKey) providerOrder.push(key);
-    });
-  }
+  const providerOrder = [
+    "lrclib",
+    "netease",
+    "kugou",
+    "genius",
+    "ovh"
+  ];
 
   try {
     let bestResult = null;
@@ -432,6 +433,9 @@ async function handleTrackChange(api, rawTrack) {
   AppState.lastArtist = norm.artist;
   AppState.lastTitle = norm.title;
   AppState.lastTrack = norm.raw;
+
+  const panel = document.getElementById("nuke-mp-panel");
+  if (panel) panel.style.display = "flex";
 
   await syncSettings(api);
   updateMiniPlayerMeta(norm);
@@ -1014,7 +1018,7 @@ function attachPanelEventListeners(panel) {
   document.getElementById("nuke-btn-refresh")?.addEventListener("click", () => {
     if (AppState.lastTrack) {
       const norm = normalizeNuclearTrack(AppState.lastTrack);
-      fetchAndDisplay(norm);
+      fetchLyrics(norm.artist, norm.title);
     }
   });
 
@@ -1218,11 +1222,17 @@ async function syncSettings(api) {
   AppState.preferences.cleanLyrics = (await api.Settings.get(SETTINGS_IDS.CLEAN_LYRICS)) !== false;
   AppState.preferences.showBgColor = (await api.Settings.get(SETTINGS_IDS.SHOW_BG_COLOR)) !== false;
   AppState.preferences.showQueue = (await api.Settings.get(SETTINGS_IDS.SHOW_QUEUE)) !== false;
-  AppState.preferences.autoscroll = (await api.Settings.get(SETTINGS_IDS.AUTOSCROLL)) !== false;
-  AppState.preferences.preferSynced = (await api.Settings.get(SETTINGS_IDS.PREFER_SYNCED)) !== false;
-  AppState.preferences.primarySource = (await api.Settings.get(SETTINGS_IDS.PRIMARY_SOURCE)) || "lrclib";
-  AppState.preferences.themeSync = (await api.Settings.get(SETTINGS_IDS.THEME_SYNC)) !== false;
-  AppState.preferences.fontSize = (await api.Settings.get(SETTINGS_IDS.FONT_SIZE)) || 16;
+  AppState.preferences.autoscroll =
+    (await api.Settings.get(SETTINGS_IDS.AUTOSCROLL)) !== false;
+
+  AppState.preferences.preferSynced =
+    (await api.Settings.get(SETTINGS_IDS.PREFER_SYNCED)) !== false;
+
+  AppState.preferences.themeSync =
+    (await api.Settings.get(SETTINGS_IDS.THEME_SYNC)) !== false;
+
+  AppState.preferences.fontSize =
+    (await api.Settings.get(SETTINGS_IDS.FONT_SIZE)) || 16;
 }
 
 function setupNativeSettingsInjector(api) {
@@ -1282,6 +1292,7 @@ module.exports = {
                                 { id: SETTINGS_IDS.CLEAN_LYRICS, title: "clean lyrics section headers and credits", category: "mini player & lyrics", kind: "boolean", type: "boolean", default: true },
                                 { id: SETTINGS_IDS.SHOW_BG_COLOR, title: "display miniplayer background color", category: "mini player & lyrics", kind: "boolean", type: "boolean", default: true },
                                 { id: SETTINGS_IDS.SHOW_QUEUE, title: "enable queue menu", category: "mini player & lyrics", kind: "boolean", type: "boolean", default: true },
+                                { id: SETTINGS_IDS.AUTOSCROLL, title: "auto scroll synced lyrics", category: "mini player & lyrics", kind: "boolean", type: "boolean", default: true },
                                 { id: SETTINGS_IDS.PREFER_SYNCED, title: "prefer synced lrc lyrics", category: "mini player & lyrics", kind: "boolean", type: "boolean", default: true },
                                 { id: SETTINGS_IDS.THEME_SYNC, title: "sync theme accent color", category: "mini player & lyrics", kind: "boolean", type: "boolean", default: true }
     ]);
