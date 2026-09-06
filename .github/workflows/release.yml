@@ -19,11 +19,13 @@ jobs:
         run: |
           test -f package.json
           python3 -m json.tool package.json >/dev/null
-          grep -q '"version": "1.7.9"' package.json
+          VERSION="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          test "$VERSION" = "${GITHUB_REF_NAME#v}"
 
       - name: Create Plugin Zip
         run: |
-          zip -r plugin.zip index.js package.json README.md
+          rm -f plugin.zip
+          zip -j plugin.zip index.js package.json
 
       - name: Validate Plugin Zip
         run: |
