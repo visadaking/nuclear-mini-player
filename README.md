@@ -34,4 +34,4 @@ resizable and draggable interface (it stays where you put it)
 ```
 
 -------------------------------------------------------------
-version 1.7.10 beta as of 06/09/2026
+version 1.8.0 beta as of 14/10/2026
