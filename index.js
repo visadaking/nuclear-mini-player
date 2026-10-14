@@ -12,6 +12,7 @@ const SETTINGS_IDS = {
 
 let storedApi = null;
 let providerId = null;
+const LYRICS_PROVIDER_ID = "mp-lyrics";
 let unsubscribeEvents = null;
 let unsubscribeQueue = null;
 let unsubscribePlayback = null;
@@ -603,6 +604,61 @@ const Fetchers = {
   }
 };
 
+// Source order shared by the panel and the Nuclear lyrics provider.
+const FETCHER_ORDER = [
+  "lrclib",
+  "netease",
+  "kugou",
+  "genius",
+  "ovh"
+];
+
+// Pure fetcher pass: tries each source in order, returns the best raw
+// { lyrics, source, isSynced } hit or null. No UI side effects.
+async function runFetchers(cA, cT, signal, preferSynced) {
+  if (preferSynced === undefined) {
+    preferSynced =
+    AppState.preferences.preferSynced;
+  }
+
+  let bestResult = null;
+
+  for (const key of FETCHER_ORDER) {
+    if (signal && signal.aborted) {
+      return null;
+    }
+
+    const fetcher = Fetchers[key];
+
+    if (!fetcher) continue;
+
+    const result =
+    await fetcher(
+      cA,
+      cT,
+      signal
+    );
+
+    if (
+      result &&
+      result.lyrics
+    ) {
+      if (
+        result.isSynced &&
+        preferSynced
+      ) {
+        return result;
+      }
+
+      if (!bestResult) {
+        bestResult = result;
+      }
+    }
+  }
+
+  return bestResult;
+}
+
 async function fetchLyrics(artist, title) {
   if (AppState.abortController) {
     AppState.abortController.abort();
@@ -619,54 +675,78 @@ async function fetchLyrics(artist, title) {
     "searching lyrics..."
   );
 
+  // Ask Nuclear's own providers first (host-ranked: word > line > plain).
+  // Our own mp-lyrics result is skipped to avoid a duplicate fetch loop.
+  try {
+    const lyricsApi =
+    storedApi && storedApi.Lyrics;
+
+    if (
+      lyricsApi &&
+      typeof lyricsApi.getLyricsForTrack === "function" &&
+      AppState.lastTrack
+    ) {
+      const hostResults =
+      await lyricsApi.getLyricsForTrack(AppState.lastTrack);
+
+      if (signal.aborted) return;
+
+      const usable = [];
+
+      for (const r of hostResults || []) {
+        if (!r || !r.lyrics) continue;
+
+        if (r.providerId === LYRICS_PROVIDER_ID) continue;
+
+        if (r.lyrics.type === "instrumental") {
+          usable.push({ r, entries: [] });
+          continue;
+        }
+
+        const { entries } = attributedToEntries(r);
+
+        if (entries.length > 0) {
+          usable.push({ r, entries });
+        }
+      }
+
+      const pick =
+      usable.find((u) => u.entries.length > 0) ||
+      usable[0];
+
+      if (pick) {
+        if (pick.entries.length === 0) {
+          updateLyricsUI(
+            title,
+            "♪ instrumental",
+            `${pick.r.providerName || "nuclear"} · instrumental`
+          );
+        } else {
+          updateLyricsUI(
+            title,
+            entriesToLrc(pick.entries),
+            `${pick.r.providerName || "nuclear"} · ${pick.r.lyrics.type}`
+          );
+        }
+
+        return;
+      }
+    }
+  } catch (_) {}
+
   const cA =
   cleanMetadataString(artist);
 
   const cT =
   cleanMetadataString(title);
 
-  const providerOrder = [
-    "lrclib",
-    "netease",
-    "kugou",
-    "genius",
-    "ovh"
-  ];
-
   try {
-    let bestResult = null;
-
-    for (const key of providerOrder) {
-      if (signal.aborted) return;
-
-      const fetcher = Fetchers[key];
-
-      if (!fetcher) continue;
-
-      const result =
-      await fetcher(
-        cA,
-        cT,
-        signal
-      );
-
-      if (
-        result &&
-        result.lyrics
-      ) {
-        if (
-          result.isSynced &&
-          AppState.preferences.preferSynced
-        ) {
-          bestResult = result;
-          break;
-        }
-
-        if (!bestResult) {
-          bestResult = result;
-        }
-      }
-    }
+    const bestResult =
+    await runFetchers(
+      cA,
+      cT,
+      signal
+    );
 
     if (signal.aborted) return;
 
@@ -717,16 +797,11 @@ function cleanLyricsText(rawText) {
   .trim();
 }
 
-function parseLrc(raw) {
-  const cleaned =
-  cleanLyricsText(raw);
+function parseCleanedLines(cleaned) {
+  const entries = [];
 
-  if (!cleaned) return [];
-
-  AppState.hasSyncedTimestamps =
+  let synced =
   false;
-
-  AppState.parsedLyrics = [];
 
   const lines =
   cleaned.split(/\r?\n/);
@@ -781,14 +856,14 @@ function parseLrc(raw) {
         ms / 1000
       );
 
-      AppState.hasSyncedTimestamps =
+      synced =
       true;
     }
 
     if (timestamps.length > 0) {
       timestamps.forEach(
         (time) => {
-          AppState.parsedLyrics.push(
+          entries.push(
             {
               time,
               text:
@@ -798,20 +873,20 @@ function parseLrc(raw) {
         }
       );
     } else if (text) {
-      AppState.parsedLyrics.push(
+      entries.push(
         {
           time: -1,
           text
         }
       );
     } else if (
-      AppState.parsedLyrics.length >
+      entries.length >
       0 &&
-      !AppState.parsedLyrics[
-        AppState.parsedLyrics.length - 1
+      !entries[
+        entries.length - 1
       ].spacer
     ) {
-      AppState.parsedLyrics.push(
+      entries.push(
         {
           time: -1,
           text: "",
@@ -821,10 +896,166 @@ function parseLrc(raw) {
     }
   });
 
-  return AppState.parsedLyrics.sort(
+  entries.sort(
     (a, b) =>
     a.time - b.time
   );
+
+  return { entries, synced };
+}
+
+function parseLrc(raw) {
+  const cleaned =
+  cleanLyricsText(raw);
+
+  if (!cleaned) {
+    AppState.hasSyncedTimestamps =
+    false;
+
+    AppState.parsedLyrics =
+    [];
+
+    return [];
+  }
+
+  const { entries, synced } =
+  parseCleanedLines(cleaned);
+
+  AppState.hasSyncedTimestamps =
+  synced;
+
+  AppState.parsedLyrics =
+  entries;
+
+  return entries;
+}
+
+// Convert parsed panel entries ({ time in seconds, text }) back to LRC text
+// so host-provider results reuse the panel render path (click-to-seek,
+// autoscroll, copy).
+function entriesToLrc(entries) {
+  const pad = (n) => (n < 10 ? "0" : "") + n;
+
+  return (entries || [])
+  .filter((e) => e && !e.spacer && (e.text || "").trim() !== "")
+  .map((e) => {
+    if (typeof e.time !== "number" || e.time < 0) {
+      return e.text;
+    }
+
+    const total = Math.max(0, e.time);
+    const mins = Math.floor(total / 60);
+    const secs = Math.floor(total % 60);
+    const cs = Math.floor((total % 1) * 100);
+
+    return `[${pad(mins)}:${pad(secs)}.${pad(cs)}]${e.text}`;
+  })
+  .join("\n");
+}
+
+// Convert parsed entries to a Nuclear Lyrics object (times → milliseconds).
+function entriesToLyrics(entries) {
+  const usable = (entries || []).filter(
+    (e) => e && !e.spacer && (e.text || "").trim() !== ""
+  );
+
+  const timed = usable
+  .filter((e) => typeof e.time === "number" && e.time >= 0)
+  .sort((a, b) => a.time - b.time);
+
+  if (timed.length > 0) {
+    const lines = timed.map((line, i) => {
+      const startMs = Math.round(line.time * 1000);
+      const next = timed[i + 1];
+      const endMs = next ? Math.round(next.time * 1000) : startMs;
+
+      return {
+        startMs,
+        endMs: Math.max(endMs, startMs),
+        segments: [{ text: line.text }]
+      };
+    });
+
+    return {
+      type: "lineSynced",
+      metadata: {},
+      sections: [{ lines }]
+    };
+  }
+
+  return {
+    type: "plain",
+    metadata: {},
+    sections: [
+      { lines: usable.map((e) => ({ segments: [{ text: e.text }] })) }
+    ]
+  };
+}
+
+// Convert one host AttributedLyrics result to panel entries.
+function attributedToEntries(attributed) {
+  const lyrics = attributed && attributed.lyrics;
+
+  if (!lyrics || lyrics.type === "instrumental") {
+    return {
+      entries: [],
+      instrumental: !!lyrics && lyrics.type === "instrumental"
+    };
+  }
+
+  const joinSegments = (segments) =>
+  (segments || []).map((s) => s.text || "").join("");
+
+  const entries = [];
+
+  for (const section of lyrics.sections || []) {
+    for (const line of section.lines || []) {
+      const text = joinSegments(line.segments);
+
+      if (text.trim() === "") continue;
+
+      if (
+        typeof line.startMs === "number" &&
+        typeof line.endMs === "number"
+      ) {
+        entries.push({ time: line.startMs / 1000, text });
+      } else {
+        entries.push({ time: -1, text });
+      }
+    }
+  }
+
+  return { entries, instrumental: false };
+}
+
+// Nuclear lyrics provider: same sources as the panel, model-shaped output.
+// Returns undefined when nothing matches (instrumental is only returned when
+// a source positively reports no lyrics — our scrapers cannot know that).
+async function providerGetLyrics(track) {
+  const norm = normalizeNuclearTrack(track);
+
+  if (!norm || !norm.title || norm.title === "Unknown Track") {
+    return undefined;
+  }
+
+  const result = await runFetchers(
+    norm.cleanArtist || norm.artist,
+    norm.cleanTitle || norm.title,
+    undefined,
+    true
+  );
+
+  if (!result || !result.lyrics) {
+    return undefined;
+  }
+
+  const { entries } = parseCleanedLines(cleanLyricsText(result.lyrics));
+
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  return entriesToLyrics(entries);
 }
 
 async function handleTrackChange(
@@ -3903,13 +4134,14 @@ module.exports = {
       true
     );
 
-    providerId =
     api.Providers.register({
-      id: "mp-lyrics",
+      id: LYRICS_PROVIDER_ID,
       kind: "lyrics",
-      name: "miniplayer lyrics",
-      fetchLyrics: () => null
+      name: "Miniplayer lyrics",
+      getLyrics: providerGetLyrics
     });
+
+    providerId = LYRICS_PROVIDER_ID;
   },
 
   async onDisable(api) {
