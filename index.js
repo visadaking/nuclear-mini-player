@@ -2435,17 +2435,7 @@ function bindPlayerEvents() {
         return;
       }
 
-      state.playback.seek = value;
-      state.playback.updatedAt =
-      performance.now();
-
-      await api?.Playback?.seekTo?.(
-        value
-      );
-
-      updateProgressUI();
-      updateActiveLyric();
-      syncDetachedPlayer();
+      await seekTo(value);
     }
   );
 
@@ -2928,50 +2918,92 @@ function applyFullscreen() {
 }
 
 async function togglePlayback() {
-  try {
-    await api.Playback.toggle();
-  } catch (error) {
-    log(
-      "playback toggle failed",
-      error
-    );
+  if (api?.Playback?.toggle) {
+    try {
+      await api.Playback.toggle();
+      return;
+    } catch (error) {
+      log(
+        "playback toggle failed",
+        error
+      );
+    }
+  }
+
+  const audio =
+  getAudioElement();
+
+  if (audio) {
+    try {
+      if (audio.paused) {
+        await audio.play();
+      } else {
+        audio.pause();
+      }
+    } catch (_) {}
+
+    updatePlaybackUI();
   }
 }
 
 async function playPrevious() {
-  if (!api?.Queue?.goToPrevious) {
-    log(
-      "Queue.goToPrevious is unavailable"
-    );
-    return;
+  if (api?.Queue?.goToPrevious) {
+    try {
+      await api.Queue.goToPrevious();
+      return;
+    } catch (error) {
+      log(
+        "previous track failed",
+        error
+      );
+    }
   }
 
-  try {
-    await api.Queue.goToPrevious();
-  } catch (error) {
-    log(
-      "previous track failed",
-      error
-    );
+  if (api?.Playback?.previousTrack) {
+    try {
+      await api.Playback.previousTrack();
+      return;
+    } catch (error) {
+      log(
+        "previous track fallback failed",
+        error
+      );
+    }
   }
+
+  log(
+    "Queue.goToPrevious is unavailable"
+  );
 }
 
 async function playNext() {
-  if (!api?.Queue?.goToNext) {
-    log(
-      "Queue.goToNext is unavailable"
-    );
-    return;
+  if (api?.Queue?.goToNext) {
+    try {
+      await api.Queue.goToNext();
+      return;
+    } catch (error) {
+      log(
+        "next track failed",
+        error
+      );
+    }
   }
 
-  try {
-    await api.Queue.goToNext();
-  } catch (error) {
-    log(
-      "next track failed",
-      error
-    );
+  if (api?.Playback?.nextTrack) {
+    try {
+      await api.Playback.nextTrack();
+      return;
+    } catch (error) {
+      log(
+        "next track fallback failed",
+        error
+      );
+    }
   }
+
+  log(
+    "Queue.goToNext is unavailable"
+  );
 }
 
 function toggleMute() {
@@ -3337,15 +3369,37 @@ async function seekTo(seconds) {
   state.playback.updatedAt =
   performance.now();
 
+  let seekDone = false;
+
   try {
-    await api.Playback.seekTo(
-      value
-    );
+    if (api?.Playback?.seekTo) {
+      await api.Playback.seekTo(
+        value
+      );
+
+      seekDone = true;
+    }
   } catch (error) {
     log(
       "seek failed",
       error
     );
+  }
+
+  if (!seekDone) {
+    const audio =
+    getAudioElement();
+
+    if (
+      audio &&
+      Number.isFinite(audio.duration)
+    ) {
+      audio.currentTime = clamp(
+        value,
+        0,
+        audio.duration
+      );
+    }
   }
 
   updateProgressUI();
