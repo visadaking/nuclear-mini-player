@@ -1,6 +1,6 @@
 {
   "name": "nuclear-mini-player",
-  "version": "1.7.10",
+  "version": "1.8.0",
   "description": "Nuclear Mini Player, synced and lyrics and click-to-seek, draggable resizable panel, full-screen view, text resizing, copying lyrics, and manual refreshing",
   "author": "visa",
   "main": "index.js",
