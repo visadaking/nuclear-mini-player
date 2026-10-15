@@ -1,7 +1,5 @@
 # Nuclear Mini Player - lyrics and a mini player for Nuclear
 
-category: lyrics
-
 a single-file plugin for [Nuclear](https://nuclearplayer.com) that pins a
 small player in the corner of the window: artwork, controls, synced
 lyrics, and the queue. no build step, no dependencies - just `index.js`
