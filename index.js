@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.8.0 Dev Rework
+ * Nuclear Mini Player v1.8.1 Dev Rework
  */
 
 // settings
@@ -4546,11 +4546,11 @@ function setupMediaSession() {
 
   const handlers = {
     play: () => {
-      return api.Playback.play();
+      return api?.Playback?.play?.();
     },
 
     pause: () => {
-      return api.Playback.pause();
+      return api?.Playback?.pause?.();
     },
 
     previoustrack: () => {
