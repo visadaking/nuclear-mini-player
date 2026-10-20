@@ -3300,13 +3300,32 @@ function renderLyrics() {
           ".nuke-mp-lyric-line.active"
         );
 
-        active?.scrollIntoView({
-          behavior: "smooth",
-          block: "center"
-        });
+        scrollLyricIntoView(active);
       }
     );
   }
+}
+
+// Scroll only the lyrics box. scrollIntoView would also scroll the
+// panel itself (overflow: hidden still scrolls) and push the header out.
+function scrollLyricIntoView(line) {
+  const body =
+  line?.closest(".nuke-mp-lyrics-body");
+
+  if (!body) {
+    return;
+  }
+
+  const lineBox = line.getBoundingClientRect();
+  const bodyBox = body.getBoundingClientRect();
+
+  body.scrollTo({
+    top:
+    body.scrollTop +
+    (lineBox.top - bodyBox.top) -
+    (body.clientHeight - lineBox.height) / 2,
+    behavior: "smooth"
+  });
 }
 
 function updateActiveLyric() {
@@ -3361,10 +3380,7 @@ function updateActiveLyric() {
     `.nuke-mp-lyric-line[data-index="${nextIndex}"]`
   );
 
-  active?.scrollIntoView({
-    behavior: "smooth",
-    block: "center"
-  });
+  scrollLyricIntoView(active);
 }
 
 async function seekTo(seconds) {
