@@ -31,13 +31,18 @@ doing - and pops out into its own window when you want it elsewhere.
   previous / play / next, mute, lyrics, queue, fullscreen, detach, close.
 - **lyrics from 5 sources, in order** - LRCLib, Netease, Kugou, Genius,
   Lyrics.ovh. the first source with a match wins; a source that is down
-  is skipped quietly.
+  is skipped quietly. LRCLib, Netease and Kugou are searched, and only a
+  result with the same title and artist counts; synced lyrics are used
+  only when their length fits the song, so the timings line up.
 - **synced lyrics you can click.** timed lines follow the song; click any
   line to jump straight to it. auto-scroll is a setting.
 - **cleaner titles.** for lyric and artwork lookups it strips bracketed
   junk - `feat.`, `ft.`, `official`, `remastered`, `deluxe`, `live`,
-  `bonus`, `radio edit`, `version`, `video`, `hq`, `hd`, `audio` - and a
-  trailing `- Single`, so "Song (Remastered 2011)" still finds lyrics.
+  `bonus`, `radio edit`, `version`, `video`, `hq`, `hd`, `audio`,
+  `lyrics`, `mv`, `music video`, `visualizer`, `karaoke` - plus anything
+  after ` | `, a trailing `- Single` or `- Remastered`, so "Song
+  (Remastered 2011)" still finds lyrics. YouTube titles written as
+  "Artist - Song" are searched by that artist, not the channel name.
 - **it fits your theme.** the accent colour is read from your Nuclear
   theme and watched live, so it follows a theme change.
 - **artwork, everywhere it helps.** the current cover glows behind the

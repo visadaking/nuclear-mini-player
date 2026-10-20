@@ -479,13 +479,146 @@ const lyricsCache = new BoundedCache(80);
 
 function cleanMetadataForLookup(value) {
   return safeString(value)
+  // YouTube titles: "Song | Official Lyric Video"
+  .replace(/\s+\|.*$/, "")
   .replace(
-    /\s*[\[(]\s*(?:feat\.?|ft\.?|with|official(?:\s+video|\s+audio)?|remaster(?:ed)?|deluxe|live|bonus|radio\s+edit|version|video|hq|hd|audio)[^\])]*[\])]/gi,
+    /\s*[\[(]\s*(?:feat\.?|ft\.?|with|official|remaster(?:ed)?|deluxe|live|bonus|radio\s+edit|version|video|hq|hd|audio|lyrics?|lirik|mv|m\/v|music\s+video|visuali[sz]er|karaoke)\b[^\])]*[\])]/gi,
     ""
     )
-    .replace(/\s*[-–]\s*Single\s*$/i, "")
+    .replace(/\s+(?:feat\.?|ft\.?)\s+.*$/i, "")
+    .replace(/\s*[-–]\s*(?:single|(?:\d{4}\s+)?remaster(?:ed)?|radio\s+edit|live)\b.*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function cleanArtistForLookup(value) {
+  return cleanMetadataForLookup(value)
+  .replace(/\s*-\s*Topic$/i, "")
+  .replace(/\s*VEVO$/i, "")
+  .trim();
+}
+
+// What to search lyrics for. YouTube uploads often read "Artist - Song"
+// with a label or channel as the artist, so trust the title's artist.
+function buildLyricsTarget(track) {
+  const channel = cleanArtistForLookup(
+    track.lookupArtist || track.displayArtist
+  );
+
+  const fullTitle =
+  track.lookupTitle ||
+  cleanMetadataForLookup(track.displayTitle);
+
+  let artist = channel;
+  let title = fullTitle;
+
+  const parts = fullTitle.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+
+  if (parts) {
+    artist = parts[1].trim();
+    title = parts[2].trim();
+  }
+
+  return {
+    artist,
+    title,
+    fullTitle,
+    artistHint: `${channel} ${artist}`,
+    duration: track.duration || 0
+  };
+}
+
+function normalizeForMatch(value) {
+  return safeString(value)
+  .toLowerCase()
+  .normalize("NFKD")
+  .replace(/[̀-ͯ]/g, "")
+  .replace(/[\[(][^\])]*[\])]/g, " ")
+  .replace(/[^\p{L}\p{N}]+/gu, " ")
+  .trim();
+}
+
+function titleMatches(found, target) {
+  const a = normalizeForMatch(found);
+
+  return [target.title, target.fullTitle].some((wanted) => {
+    const b = normalizeForMatch(wanted);
+
+    if (!a || !b) {
+      return false;
+    }
+
+    if (a === b) {
+      return true;
+    }
+
+    const [shorter, longer] =
+    a.length < b.length ? [a, b] : [b, a];
+
+    return shorter.length >= 4 && longer.includes(shorter);
+  });
+}
+
+const ARTIST_FILLER_WORDS = new Set([
+  "the", "and", "feat", "ft", "official", "music", "tv", "band", "vevo"
+]);
+
+function artistMatches(found, target) {
+  const hint = new Set(
+    normalizeForMatch(target.artistHint).split(" ")
+  );
+
+  return normalizeForMatch(found)
+  .split(" ")
+  .some(
+    (word) =>
+    word &&
+    !ARTIST_FILLER_WORDS.has(word) &&
+    hint.has(word)
+  );
+}
+
+// Pick the search result that is really this song. Synced lyrics only
+// win when their length fits this cut, or the timings would drift.
+// Each item: { title, artist, duration (seconds), hasSynced }.
+function pickBestMatch(items, target) {
+  let best = null;
+
+  for (const item of items) {
+    const gap =
+    target.duration > 0 && item.duration > 0
+    ? Math.abs(item.duration - target.duration)
+    : null;
+
+    if (!titleMatches(item.title, target)) {
+      continue;
+    }
+
+    // another artist's song with the same name, unless the length is spot on
+    if (
+      !artistMatches(item.artist, target) &&
+      !(gap !== null && gap <= 2)
+    ) {
+      continue;
+    }
+
+    const syncFits =
+    item.hasSynced && (gap === null || gap <= 15);
+
+    const rank = (syncFits ? 0 : 100) + (gap ?? 10);
+
+    if (!best || rank < best.rank) {
+      best = { item, rank, syncFits };
+    }
+  }
+
+  return best;
+}
+
+function stripLrcTimestamps(lyric) {
+  return safeString(lyric)
+  .replace(/^\s*(?:\[[^\]]*\])+/gm, "")
+  .trim();
 }
 
 function normalizeArtist(track) {
@@ -583,7 +716,7 @@ function normalizeTrack(rawTrack) {
     track.duration ??
     track.durationSeconds ??
     track.length ??
-    0
+    (track.durationMs ? track.durationMs / 1000 : 0)
   );
 
   return {
@@ -933,31 +1066,69 @@ function findCurrentLyric(lines, currentTime) {
   return result;
 }
 
+function decodeBase64Utf8(value) {
+  const bytes = Uint8Array.from(
+    atob(value),
+    (char) => char.charCodeAt(0)
+  );
+
+  return new TextDecoder().decode(bytes);
+}
+
 async function fetchLyricsProvider(
   provider,
-  artist,
-  title,
+  target,
   signal
 ) {
+  const { artist, title } = target;
+
   if (provider === "lrclib") {
-    const params = new URLSearchParams({
-      artist_name: artist,
-      track_name: title
-    });
+    // exact lookups miss most YouTube uploads; search and pick instead
+    const searches = [
+      { track_name: title, artist_name: artist },
+      { q: `${artist} ${title}` }
+    ];
 
-    const data = await fetchJson(
-      `https://lrclib.net/api/get?${params.toString()}`,
-                                 { signal }
-    );
+    const items = [];
+    let best = null;
 
-    if (!data) {
+    for (const query of searches) {
+      const results = await fetchJson(
+        `https://lrclib.net/api/search?${new URLSearchParams(query).toString()}`,
+        { signal }
+      );
+
+      if (Array.isArray(results)) {
+        results.forEach((result) => {
+          items.push({
+            title: result.trackName,
+            artist: result.artistName,
+            duration: Number(result.duration) || 0,
+            hasSynced: Boolean(result.syncedLyrics),
+            result
+          });
+        });
+      }
+
+      best = pickBestMatch(items, target);
+
+      if (best?.syncFits) {
+        break;
+      }
+    }
+
+    if (!best) {
       return null;
     }
 
     return {
       source: "LRCLIB",
-      synced: data.syncedLyrics || "",
-      plain: data.plainLyrics || ""
+      synced: best.syncFits
+      ? best.item.result.syncedLyrics
+      : "",
+      plain:
+      best.item.result.plainLyrics ||
+      stripLrcTimestamps(best.item.result.syncedLyrics)
     };
   }
 
@@ -965,24 +1136,37 @@ async function fetchLyricsProvider(
     const params = new URLSearchParams({
       s: `${artist} ${title}`,
       type: "1",
-      limit: "1",
-      offset: "0"
+      limit: "10"
     });
 
     const search = await fetchJson(
-      `https://music.163.com/api/search/get/web?${params.toString()}`,
-                                   { signal }
+      `https://music.163.com/api/cloudsearch/pc?${params.toString()}`,
+      { signal }
     );
 
-    const id =
-    search?.result?.songs?.[0]?.id;
+    const songs = Array.isArray(search?.result?.songs)
+    ? search.result.songs
+    : [];
 
-    if (!id) {
+    const best = pickBestMatch(
+      songs.map((song) => ({
+        title: song.name,
+        artist: (song.ar || [])
+        .map((entry) => entry?.name)
+        .join(" "),
+        duration: (Number(song.dt) || 0) / 1000,
+        hasSynced: true,
+        song
+      })),
+      target
+    );
+
+    if (!best) {
       return null;
     }
 
     const data = await fetchJson(
-      `https://music.163.com/api/song/lyric?id=${id}&lv=-1&kv=-1&tv=-1`,
+      `https://music.163.com/api/song/lyric?id=${best.item.song.id}&lv=-1&kv=-1&tv=-1`,
       { signal }
     );
 
@@ -991,42 +1175,71 @@ async function fetchLyricsProvider(
     return lyric
     ? {
       source: "Netease",
-      synced: lyric,
-      plain: lyric
+      synced: best.syncFits ? lyric : "",
+      plain: stripLrcTimestamps(lyric)
     }
     : null;
   }
 
   if (provider === "kugou") {
-    const searchParams = new URLSearchParams({
-      keyword: `${artist} ${title}`,
-      page: "1",
-      pagesize: "1"
+    const params = new URLSearchParams({
+      ver: "1",
+      man: "yes",
+      client: "mobi",
+      keyword: `${artist} - ${title}`,
+      duration: String(
+        Math.round(target.duration * 1000)
+      ),
+      hash: ""
     });
 
     const search = await fetchJson(
-      `https://mobileservice.kugou.com/api/v3/search/song?${searchParams.toString()}`,
-                                   { signal }
+      `https://krcs.kugou.com/search?${params.toString()}`,
+      { signal }
     );
 
-    const song = search?.data?.info?.[0];
+    const candidates = Array.isArray(search?.candidates)
+    ? search.candidates
+    : [];
 
-    if (!song?.hash) {
+    const best = pickBestMatch(
+      candidates.map((candidate) => ({
+        title: candidate.song,
+        artist: candidate.singer,
+        duration: (Number(candidate.duration) || 0) / 1000,
+        hasSynced: true,
+        candidate
+      })),
+      target
+    );
+
+    if (!best) {
       return null;
     }
 
+    const download = new URLSearchParams({
+      ver: "1",
+      client: "pc",
+      id: String(best.item.candidate.id),
+      accesskey: String(best.item.candidate.accesskey),
+      fmt: "lrc",
+      charset: "utf8"
+    });
+
     const data = await fetchJson(
-      `https://www.kugou.com/yy/index.php?r=play/getdata&hash=${encodeURIComponent(song.hash)}`,
-                                 { signal }
+      `https://lyrics.kugou.com/download?${download.toString()}`,
+      { signal }
     );
 
-    const lyric = data?.data?.lyrics || "";
+    const lyric = data?.content
+    ? decodeBase64Utf8(data.content)
+    : "";
 
     return lyric
     ? {
       source: "Kugou",
-      synced: lyric,
-      plain: lyric
+      synced: best.syncFits ? lyric : "",
+      plain: stripLrcTimestamps(lyric)
     }
     : null;
   }
@@ -1096,20 +1309,11 @@ async function loadLyrics(track, force = false) {
     return;
   }
 
-  const artist =
-  track.lookupArtist ||
-  cleanMetadataForLookup(
-    track.displayArtist
-  );
-
-  const title =
-  track.lookupTitle ||
-  cleanMetadataForLookup(
-    track.displayTitle
-  );
+  const target =
+  buildLyricsTarget(track);
 
   const key =
-  `${artist}::${title}`.toLowerCase();
+  `${target.artist}::${target.title}`.toLowerCase();
 
   if (!force && state.lyrics.key === key) {
     return;
@@ -1173,8 +1377,7 @@ async function loadLyrics(track, force = false) {
         const result =
         await fetchLyricsProvider(
           provider,
-          artist,
-          title,
+          target,
           controller.signal
         );
 
