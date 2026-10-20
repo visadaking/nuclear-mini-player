@@ -549,6 +549,11 @@ function normalizeTrack(rawTrack) {
     return null;
   }
 
+  // already normalized: re-reading it would lose title and artist
+  if (rawTrack.raw && "lookupTitle" in rawTrack) {
+    return rawTrack;
+  }
+
   const track = rawTrack.track || rawTrack;
 
   let title = safeString(
