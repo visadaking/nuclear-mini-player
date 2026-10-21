@@ -106,5 +106,5 @@ all nine live under the plugin in **Preferences -> Plugins**:
 
 ## version
 
-1.8.1. the plugin store can lag by a release - the registry pins a
+1.8.2. the plugin store can lag by a release - the registry pins a
 version, so it shows the last one submitted there.

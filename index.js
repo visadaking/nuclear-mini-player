@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.8.1 Dev Rework
+ * Nuclear Mini Player v1.8.2 Dev Rework
  */
 
 // settings
@@ -90,6 +90,8 @@ const TEXT = {
     source: "Source",
     unknownArtist: "Unknown Artist",
     unknownTrack: "Unknown Track",
+    nothingPlaying: "Nothing playing",
+    pickTrack: "Pick a song in Nuclear",
     popupBlocked: "The detached window was blocked."
   },
 
@@ -131,6 +133,8 @@ const TEXT = {
     source: "Fuente",
     unknownArtist: "Artista desconocido",
     unknownTrack: "Canción desconocida",
+    nothingPlaying: "Nada en reproducción",
+    pickTrack: "Elige una canción en Nuclear",
     popupBlocked: "La ventana separada fue bloqueada."
   },
 
@@ -172,6 +176,8 @@ const TEXT = {
     source: "Source",
     unknownArtist: "Artiste inconnu",
     unknownTrack: "Titre inconnu",
+    nothingPlaying: "Rien en lecture",
+    pickTrack: "Choisissez une chanson dans Nuclear",
     popupBlocked: "La fenêtre séparée a été bloquée."
   },
 
@@ -213,6 +219,8 @@ const TEXT = {
     source: "Источник",
     unknownArtist: "Неизвестный исполнитель",
     unknownTrack: "Неизвестный трек",
+    nothingPlaying: "Ничего не воспроизводится",
+    pickTrack: "Выберите песню в Nuclear",
     popupBlocked: "Отдельное окно было заблокировано."
   },
 
@@ -254,6 +262,8 @@ const TEXT = {
     source: "Sursă",
     unknownArtist: "Artist necunoscut",
     unknownTrack: "Melodie necunoscută",
+    nothingPlaying: "Nimic nu rulează",
+    pickTrack: "Alege o melodie în Nuclear",
     popupBlocked: "Fereastra separată a fost blocată."
   }
 };
@@ -394,7 +404,6 @@ function createButton(className, label, icon = "") {
   const button = createElement("button", className);
 
   button.type = "button";
-  button.title = label;
   button.setAttribute("aria-label", label);
 
   if (icon) {
@@ -2610,13 +2619,23 @@ function updateTrackUI() {
     return;
   }
 
+  const hasTrack =
+  Boolean(state.track);
+
   title.textContent =
-  state.track?.displayTitle ||
-  text("waitingPlayback");
+  hasTrack
+  ? state.track.displayTitle
+  : text("nothingPlaying");
 
   artist.textContent =
-  state.track?.displayArtist ||
-  "";
+  hasTrack
+  ? state.track.displayArtist
+  : text("pickTrack");
+
+  panel?.classList.toggle(
+    "nuke-mp-idle",
+    !hasTrack
+  );
 
   const image =
   document.getElementById(
@@ -2648,7 +2667,6 @@ function updatePlaybackUI() {
     ? text("pause")
     : text("play");
 
-    play.title = label;
     play.setAttribute(
       "aria-label",
       label
@@ -2685,7 +2703,6 @@ function updatePlaybackUI() {
   ? text("unmute")
   : text("mute");
 
-  volume.title = label;
   volume.setAttribute(
     "aria-label",
     label
@@ -2822,7 +2839,6 @@ function renderInterfaceText() {
       continue;
     }
 
-    element.title = label;
     element.setAttribute(
       "aria-label",
       label
@@ -2909,7 +2925,6 @@ function applyFullscreen() {
     ? text("exitFullscreen")
     : text("fullscreen");
 
-    fullscreen.title = label;
     fullscreen.setAttribute(
       "aria-label",
       label
@@ -3072,6 +3087,10 @@ async function changeFontSize(delta) {
 function toggleLyrics() {
   state.lyricsOpen =
   !state.lyricsOpen;
+
+  if (state.lyricsOpen) {
+    closeQueue();
+  }
 
   panel?.classList.toggle(
     "nuke-mp-lyrics-open",
@@ -4193,6 +4212,8 @@ function toggleQueue() {
     closeQueue();
     return;
   }
+
+  closeLyrics();
 
   state.queueOpen =
   true;
@@ -5320,7 +5341,7 @@ const CSS = `
 
 position: fixed;
 right: 25px;
-bottom: 25px;
+bottom: 96px;
 
 z-index: 99999;
 
@@ -5344,8 +5365,8 @@ overflow: hidden;
 background:
 linear-gradient(
   135deg,
-  rgba(27,27,30,.78),
-                rgba(10,10,12,.94)
+  rgba(27,27,30,.96),
+                rgba(10,10,12,.99)
 );
 
 box-shadow:
@@ -5385,11 +5406,11 @@ cover
 no-repeat;
 
 filter:
-blur(45px)
-brightness(.34)
+blur(60px)
+brightness(.28)
 saturate(1.2);
 
-opacity: .9;
+opacity: .55;
 
 transform:
 scale(1.08);
@@ -5403,8 +5424,8 @@ display: none;
 background:
 linear-gradient(
   135deg,
-  rgba(27,27,30,.96),
-                rgba(10,10,12,.98)
+  rgba(27,27,30,.97),
+                rgba(10,10,12,.99)
 );
 }
 
@@ -5439,10 +5460,10 @@ border-radius: 16px;
   8px 10px
   7px 13px;
 
-  opacity: 0;
+  opacity: .55;
 
   transform:
-  translateY(-4px);
+  translateY(0);
 
   transition:
   opacity .18s ease,
@@ -5579,6 +5600,11 @@ border-radius: 16px;
 .nuke-mp-play-button:active {
   transform:
   scale(.95);
+}
+
+#nuke-mp-panel.nuke-mp-idle .nuke-mp-control-button,
+#nuke-mp-panel.nuke-mp-idle .nuke-mp-play-button {
+  opacity: .45;
 }
 
 .nuke-mp-icon-button svg,
@@ -5902,7 +5928,8 @@ min(
 }
 
 .nuke-mp-lyrics-body {
-  height: 390px;
+  max-height: 390px;
+  min-height: 0;
 
   overflow:
   auto;
@@ -6016,6 +6043,10 @@ button.nuke-mp-lyric-line {
   center;
 }
 
+.nuke-mp-lyrics-status {
+  min-height: 120px;
+}
+
 #nuke-mp-queue-panel {
 --nuke-mp-accent: #1ed760;
 
@@ -6023,7 +6054,7 @@ position: fixed;
 
 right: 25px;
 
-bottom: 228px;
+bottom: 300px;
 
 z-index: 99998;
 
@@ -6057,8 +6088,8 @@ border-radius: 16px;
 background:
 linear-gradient(
   135deg,
-  rgba(20,20,23,.93),
-                rgba(9,9,11,.97)
+  rgba(20,20,23,.96),
+                rgba(9,9,11,.985)
 );
 
 box-shadow:
@@ -6546,12 +6577,12 @@ translate(
 @media (max-width: 600px) {
   #nuke-mp-panel {
   right: 14px;
-  bottom: 14px;
+  bottom: 96px;
   }
 
   #nuke-mp-queue-panel {
   right: 14px;
-  bottom: 211px;
+  bottom: 300px;
   }
 
   #nuke-mp-panel.nuke-mp-lyrics-open {
@@ -6630,6 +6661,8 @@ async function onEnable(pluginApi) {
   startPlaybackAnimation();
 
   await initializeCurrentState();
+
+  updateTrackUI();
 
   showPlayer();
   updateTheme();
