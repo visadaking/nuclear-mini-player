@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.8.4 Dev Rework
+ * Nuclear Mini Player v1.8.4 
  */
 
 // settings
@@ -3142,6 +3142,11 @@ function applyFullscreen() {
     state.fullscreen
   );
 
+  queuePanel?.classList.toggle(
+    "nuke-mp-queue-fullscreen",
+    state.fullscreen
+  );
+
   const fullscreen =
   document.getElementById(
     "nuke-mp-fullscreen-button"
@@ -4502,6 +4507,11 @@ function buildQueuePanel() {
     document.body.appendChild(
       queuePanel
     );
+
+    queuePanel.classList.toggle(
+      "nuke-mp-queue-fullscreen",
+      state.fullscreen
+    );
 }
 
 function toggleQueue() {
@@ -5818,12 +5828,13 @@ pointer-events: none;
 
 #nuke-mp-panel.nuke-mp-fullscreen,
 #nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open {
-inset: 0;
-right: 0;
-bottom: 0;
+top: 0;
+left: 0;
+right: auto;
+bottom: auto;
 
-width: auto;
-height: auto;
+width: 100vw;
+height: 100vh;
 
 min-height: 0;
 max-width: none;
@@ -5836,44 +5847,227 @@ border: 0;
 border-radius: 0;
 
 box-shadow: none;
+
+background:
+linear-gradient(
+  180deg,
+  rgba(24,24,28,.995),
+  rgba(10,10,13,.995) 55%,
+  rgba(7,7,9,.995)
+);
 }
 
-#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-header,
-#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-footer,
-#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-lyrics-panel {
+#nuke-mp-panel.nuke-mp-fullscreen::before {
+  opacity: .45;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-header {
   flex: 0 0 auto;
+
+  padding: 14px 18px 10px 20px;
+
+  opacity: 1;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-brand {
+  font-size: 12px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-icon-button {
+  width: 34px;
+  height: 34px;
+
+  border-radius: 10px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-icon-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-footer {
+  flex: 0 0 auto;
+
+  padding: 0 12px 12px;
 }
 
 #nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-body {
-  width: min(900px, 100%);
+  width: 100%;
 
   flex: 1 1 auto;
 
+  min-height: 0;
+
   box-sizing: border-box;
 
-  grid-template-columns:
-  112px
-  minmax(0,1fr);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 
-  align-content: center;
+  gap: 22px;
 
   margin: 0 auto;
 
-  padding-top: 18px;
-  padding-bottom: 18px;
+  padding: 12px 24px 20px;
 }
 
 #nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-artwork {
-  width: 112px;
-  height: 112px;
+  flex: 0 0 auto;
+
+  width: clamp(130px, 40vh, 420px);
+  height: clamp(130px, 40vh, 420px);
+
+  border-radius: 18px;
+
+  box-shadow:
+  0 34px 90px rgba(0,0,0,.55),
+  inset 0 0 0 1px rgba(255,255,255,.07);
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-metadata {
+  max-width: min(760px, 86%);
+
+  text-align: center;
 }
 
 #nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-title {
-  font-size: 20px;
+  font-size: clamp(17px, 2.4vh, 28px);
 }
 
 #nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-artist {
-  font-size: 13px;
+  margin-top: 4px;
+
+  font-size: clamp(11px, 1.5vh, 15px);
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-controls {
+  gap: 26px;
+
+  padding-top: 0;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-control-button {
+  width: 48px;
+  height: 48px;
+
+  border-radius: 12px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-play-button {
+  width: 58px;
+  height: 58px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-control-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-play-button svg {
+  width: 24px;
+  height: 24px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-progress {
+  width: min(680px, 88%);
+
+  grid-template-columns:
+  42px minmax(0,1fr) 42px;
+
+  gap: 10px;
+
+  padding-top: 0;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-time {
+  font-size: 11px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-seek {
+  height: 4px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-seek::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open {
+  display: grid;
+
+  grid-template-columns:
+  minmax(0,1fr)
+  minmax(320px, 34vw);
+
+  grid-template-rows:
+  auto minmax(0,1fr) auto;
+
+  grid-template-areas:
+  "mp-header mp-header"
+  "mp-body mp-lyrics"
+  "mp-footer mp-footer";
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open .nuke-mp-header {
+  grid-area: mp-header;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open .nuke-mp-body {
+  grid-area: mp-body;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open .nuke-mp-footer {
+  grid-area: mp-footer;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open .nuke-mp-lyrics-panel {
+  grid-area: mp-lyrics;
+
+  display: flex;
+  flex-direction: column;
+
+  min-height: 0;
+  max-height: none;
+
+  overflow: hidden;
+
+  opacity: 1;
+
+  border-top: 0;
+  border-left: 1px solid rgba(255,255,255,.06);
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open .nuke-mp-lyrics-body {
+  flex: 1 1 auto;
+
+  min-height: 0;
+  max-height: none;
+}
+
+#nuke-mp-queue-panel.nuke-mp-queue-fullscreen {
+  top: 0;
+  right: 0;
+  left: auto;
+  bottom: 0;
+
+  width: min(400px, 36vw);
+  max-height: none;
+
+  border: 0;
+  border-left: 1px solid rgba(255,255,255,.08);
+  border-radius: 0;
+
+  background:
+  linear-gradient(
+    180deg,
+    #17171b,
+    #0b0b0e 60%,
+    #08080a
+  );
+
+  box-shadow:
+  -24px 0 60px rgba(0,0,0,.55);
 }
 
 .nuke-mp-header {

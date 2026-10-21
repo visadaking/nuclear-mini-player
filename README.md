@@ -55,8 +55,10 @@ doing - and pops out into its own window when you want it elsewhere.
 - **detach into its own window.** pop the player out into a real,
   resizable window that stays in sync with the panel. needs one click -
   windows that open themselves get blocked.
-- **fullscreen, copy, refresh.** a big view, copy the lyrics, or refetch
-  them.
+- **a real fullscreen view.** the panel fills the window on a solid
+  backdrop with large centered artwork and controls; lyrics open in a
+  side panel and the queue slides in as a side drawer. copy or refetch
+  lyrics from the same place.
 - **text size.** a setting (12-28 px) plus +/- buttons.
 - **5 languages.** English, Español, Français, Русский, Română.
 
@@ -113,9 +115,13 @@ all nine live under the plugin in **Preferences -> Plugins**:
 
 thanks to [Naufal48 (@naufaljct48)](https://github.com/naufaljct48) for the
 track-change, seek-estimate, lyrics-autoscroll, and lyrics-lookup fixes
-that landed in 1.8.3 and remain in 1.8.4.
+that landed in 1.8.3 and remain in 1.8.5.
 
 ## version
 
-1.8.4. the plugin store can lag by a release - the registry pins a
-version, so it shows the last one submitted there.
+1.8.5. fullscreen was rebuilt into a real big view: solid backdrop,
+large centered artwork and controls, lyrics in a side panel, and the
+queue in a side drawer. 1.8.4 cleaned up the frames and the playback
+loop; 1.8.3 shipped the four @naufaljct48 fixes. the plugin store can lag
+by a release - the registry pins a version, so it shows the last one
+submitted there.
