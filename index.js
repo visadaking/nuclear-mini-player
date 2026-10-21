@@ -341,6 +341,12 @@ const state = {
 
   animationFrame: null,
 
+  ui: {
+    playing: null,
+    muted: null,
+    progress: ""
+  },
+
   detachedWindow: null,
   detachedChannel: null,
 
@@ -2363,6 +2369,12 @@ function buildPlayer() {
 
                                     document.body.appendChild(panel);
 
+                                    state.ui = {
+                                    playing: null,
+                                    muted: null,
+                                    progress: ""
+                                    };
+
                                     bindPlayerEvents();
                                     applySettings();
                                     renderInterfaceText();
@@ -2865,20 +2877,25 @@ function updatePlaybackUI() {
   );
 
   if (play) {
-    play.innerHTML =
-    state.playback.status === "playing"
-    ? ICONS.pause
-    : ICONS.play;
+    const playing =
+    state.playback.status === "playing";
 
-    const label =
-    state.playback.status === "playing"
-    ? text("pause")
-    : text("play");
+    if (state.ui.playing !== playing) {
+      state.ui.playing =
+      playing;
 
-    play.setAttribute(
-      "aria-label",
-      label
-    );
+      play.innerHTML =
+      playing
+      ? ICONS.pause
+      : ICONS.play;
+
+      play.setAttribute(
+        "aria-label",
+        playing
+        ? text("pause")
+        : text("play")
+      );
+    }
   }
 
   updateProgressUI();
@@ -2901,20 +2918,22 @@ function updatePlaybackUI() {
     audio?.volume === 0
   );
 
-  volume.innerHTML =
-  muted
-  ? ICONS.mute
-  : ICONS.volume;
+  if (state.ui.muted !== muted) {
+    state.ui.muted =
+    muted;
 
-  const label =
-  muted
-  ? text("unmute")
-  : text("mute");
+    volume.innerHTML =
+    muted
+    ? ICONS.mute
+    : ICONS.volume;
 
-  volume.setAttribute(
-    "aria-label",
-    label
-  );
+    volume.setAttribute(
+      "aria-label",
+      muted
+      ? text("unmute")
+      : text("mute")
+    );
+  }
 }
 
 function updateProgressUI() {
@@ -2991,10 +3010,18 @@ function updateProgressUI() {
   )
   : 0;
 
-  seek.style.setProperty(
-    "--nuke-mp-progress",
-    `${percentage}%`
-  );
+  const progress =
+  `${percentage}%`;
+
+  if (state.ui.progress !== progress) {
+    state.ui.progress =
+    progress;
+
+    seek.style.setProperty(
+      "--nuke-mp-progress",
+      progress
+    );
+  }
 }
 
 function renderInterfaceText() {
@@ -3120,6 +3147,15 @@ function hidePlayer() {
   );
   closeQueue();
   closeLyrics();
+
+  if (state.animationFrame) {
+    cancelAnimationFrame(
+      state.animationFrame
+    );
+
+    state.animationFrame =
+    null;
+  }
 }
 
 function showPlayer() {
@@ -3127,6 +3163,17 @@ function showPlayer() {
   panel?.classList.remove(
     "nuke-mp-hidden"
   );
+
+  updatePlaybackUI();
+  updateActiveLyric();
+
+  if (
+    state.playback.status ===
+    "playing" &&
+    !state.animationFrame
+  ) {
+    startPlaybackAnimation();
+  }
 }
 
 function toggleFullscreen() {
@@ -4579,7 +4626,8 @@ function handlePlaybackState(
 
   if (
     state.playback.status ===
-    "playing"
+    "playing" &&
+    !state.hidden
   ) {
     if (!state.animationFrame) {
       startPlaybackAnimation();
@@ -5326,7 +5374,9 @@ function detachedWindowHtml() {
 
       if (
         data.title !==
-        undefined
+        undefined &&
+        title.textContent !==
+        data.title
       ) {
         title.textContent =
         data.title;
@@ -5334,22 +5384,37 @@ function detachedWindowHtml() {
 
       if (
         data.artist !==
-        undefined
+        undefined &&
+        artist.textContent !==
+        data.artist
       ) {
         artist.textContent =
         data.artist;
       }
 
       if (data.artwork) {
-        cover.src =
-        data.artwork;
-      } else {
+        if (
+          cover.getAttribute("src") !==
+          data.artwork
+        ) {
+          cover.src =
+          data.artwork;
+        }
+      } else if (
+        cover.hasAttribute("src")
+      ) {
         cover.removeAttribute(
           "src"
         );
       }
 
-      if (data.accent) {
+      if (
+        data.accent &&
+        document.documentElement.style
+        .getPropertyValue(
+          "--accent"
+        ) !== data.accent
+      ) {
         document.documentElement
         .style
         .setProperty(
@@ -5363,13 +5428,26 @@ function detachedWindowHtml() {
           data.duration
         )
       ) {
-        seek.max =
+        const max =
         String(data.duration);
 
-        duration.textContent =
+        if (seek.max !== max) {
+          seek.max =
+          max;
+        }
+
+        const durationText =
         formatTime(
           data.duration
         );
+
+        if (
+          duration.textContent !==
+          durationText
+        ) {
+          duration.textContent =
+          durationText;
+        }
       }
 
       if (
@@ -5377,19 +5455,42 @@ function detachedWindowHtml() {
           data.seek
         )
       ) {
-        seek.value =
+        const value =
         String(data.seek);
 
-        current.textContent =
+        if (seek.value !== value) {
+          seek.value =
+          value;
+        }
+
+        const currentText =
         formatTime(
           data.seek
         );
+
+        if (
+          current.textContent !==
+          currentText
+        ) {
+          current.textContent =
+          currentText;
+        }
       }
 
-      play.innerHTML =
+      const status =
       data.status === "playing"
-      ? ICONS.pause
-      : ICONS.play;
+      ? "playing"
+      : "paused";
+
+      if (play.dataset.status !== status) {
+        play.dataset.status =
+        status;
+
+        play.innerHTML =
+        status === "playing"
+        ? ICONS.pause
+        : ICONS.play;
+      }
     }
   );
 
@@ -5623,6 +5724,7 @@ function startPlaybackAnimation() {
     );
   }
 
+  let lastPaint = 0;
   let lastDetachedSync = 0;
 
   const tick = (now) => {
@@ -5665,6 +5767,22 @@ function startPlaybackAnimation() {
 
     state.playback.updatedAt =
     now;
+
+    // paint the panel at ~10fps; the display can run at 200fps,
+    // and the seek estimate above stays exact in state
+    if (
+      now - lastPaint <
+      100
+    ) {
+      state.animationFrame =
+      requestAnimationFrame(
+        tick
+      );
+
+      return;
+    }
+
+    lastPaint = now;
 
     updateProgressUI();
     updateActiveLyric();
@@ -5802,6 +5920,8 @@ saturate(1.2);
 
 opacity: .55;
 
+will-change: transform;
+
 transform:
 scale(1.08);
 }
@@ -5858,7 +5978,7 @@ linear-gradient(
 }
 
 #nuke-mp-panel.nuke-mp-fullscreen::before {
-  opacity: .45;
+  display: none;
 }
 
 #nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-header {
