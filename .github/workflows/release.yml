@@ -10,18 +10,33 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Validate plugin metadata
+        run: |
+          test -f package.json
+          python3 -m json.tool package.json >/dev/null
+          VERSION="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          test "$VERSION" = "${GITHUB_REF_NAME#v}"
+
       - name: Create Plugin Zip
         run: |
-          zip -r nuclear-mini-player.zip . -x "*.git*" ".github*"
+          rm -f plugin.zip
+          zip -j plugin.zip index.js package.json
+
+      - name: Validate Plugin Zip
+        run: |
+          unzip -l plugin.zip
+          unzip -l plugin.zip | grep -q 'package.json'
+          unzip -p plugin.zip package.json | python3 -m json.tool >/dev/null
 
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: nuclear-mini-player.zip
+          files: plugin.zip
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           generate_release_notes: true
