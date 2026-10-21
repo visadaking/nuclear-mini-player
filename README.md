@@ -109,7 +109,13 @@ all nine live under the plugin in **Preferences -> Plugins**:
 - **it needs a real Nuclear host.** it cannot run under plain node; the
   honest test is loading it in Nuclear.
 
+## credits
+
+thanks to [Naufal48 (@naufaljct48)](https://github.com/naufaljct48) for the
+track-change, seek-estimate, lyrics-autoscroll, and lyrics-lookup fixes
+that landed in 1.8.3.
+
 ## version
 
-1.8.2. the plugin store can lag by a release - the registry pins a
+1.8.3. the plugin store can lag by a release - the registry pins a
 version, so it shows the last one submitted there.

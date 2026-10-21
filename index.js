@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.8.2 Dev Rework
+ * Nuclear Mini Player v1.8.3 Dev Rework
  */
 
 // settings
