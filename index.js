@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.8.3 Dev Rework
+ * Nuclear Mini Player v1.8.4 Dev Rework
  */
 
 // settings
@@ -2942,25 +2942,45 @@ function updateProgressUI() {
   state.track?.duration ||
   0;
 
-  seek.max = String(total);
+  const max =
+  String(total);
+
+  if (seek.max !== max) {
+    seek.max = max;
+  }
 
   if (
     seek.dataset.dragging !== "true"
   ) {
-    seek.value = String(
+    const value =
+    String(
       clamp(
         state.playback.seek,
         0,
         total || state.playback.seek
       )
     );
+
+    if (seek.value !== value) {
+      seek.value = value;
+    }
   }
 
-  current.textContent =
+  const currentText =
   formatTime(state.playback.seek);
 
-  duration.textContent =
+  if (current.textContent !== currentText) {
+    current.textContent =
+    currentText;
+  }
+
+  const durationText =
   formatTime(total);
+
+  if (duration.textContent !== durationText) {
+    duration.textContent =
+    durationText;
+  }
 
   const percentage =
   total > 0
@@ -3747,6 +3767,47 @@ function renderQueuePanel() {
   renderQueueItems(content);
 }
 
+function createTrackThumb(track, index) {
+  const thumb = createElement(
+    "span",
+    "nuke-mp-list-thumb"
+  );
+
+  const number = createElement(
+    "span",
+    "nuke-mp-list-thumb-number",
+    String(index + 1).padStart(2, "0")
+  );
+
+  thumb.appendChild(number);
+
+  const artwork =
+  typeof track?.artwork === "string"
+  ? track.artwork.trim()
+  : "";
+
+  if (artwork) {
+    const image = createElement(
+      "img",
+      "nuke-mp-list-thumb-image"
+    );
+
+    image.src = artwork;
+    image.alt = "";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.draggable = false;
+    image.addEventListener(
+      "error",
+      () => image.remove()
+    );
+
+    thumb.appendChild(image);
+  }
+
+  return thumb;
+}
+
 function renderQueueItems(content) {
   content.replaceChildren();
 
@@ -3787,13 +3848,9 @@ function renderQueueItems(content) {
 
       main.type = "button";
 
-      const number = createElement(
-        "span",
-        "nuke-mp-list-number",
-        String(index + 1).padStart(
-          2,
-          "0"
-        )
+      const thumb = createTrackThumb(
+        track,
+        index
       );
 
       const info = createElement(
@@ -3839,7 +3896,7 @@ function renderQueueItems(content) {
       }
 
       main.append(
-        number,
+        thumb,
         info
       );
 
@@ -3995,13 +4052,37 @@ function renderPlaylistList(content) {
       "nuke-mp-playlist-art"
     );
 
+    const artworkLabel =
+    createElement(
+      "span",
+      "nuke-mp-playlist-art-label",
+      (playlist.name || "?").trim().charAt(0).toUpperCase() || "?"
+    );
+
+    artwork.appendChild(artworkLabel);
+
     if (
       typeof playlist.artwork ===
       "string" &&
       playlist.artwork
     ) {
-      artwork.style.backgroundImage =
-      `url("${playlist.artwork.replaceAll('"', '\\"')}")`;
+      const artworkImage =
+      createElement(
+        "img",
+        "nuke-mp-playlist-art-image"
+      );
+
+      artworkImage.src = playlist.artwork;
+      artworkImage.alt = "";
+      artworkImage.loading = "lazy";
+      artworkImage.decoding = "async";
+      artworkImage.draggable = false;
+      artworkImage.addEventListener(
+        "error",
+        () => artworkImage.remove()
+      );
+
+      artwork.appendChild(artworkImage);
     }
 
     const info =
@@ -4220,14 +4301,10 @@ function renderPlaylistDetails(
       button.type =
       "button";
 
-    const number =
-    createElement(
-      "span",
-      "nuke-mp-list-number",
-      String(index + 1).padStart(
-        2,
-        "0"
-      )
+    const thumb =
+    createTrackThumb(
+      track,
+      index
     );
 
     const info =
@@ -4256,7 +4333,7 @@ function renderPlaylistDetails(
     );
 
     button.append(
-      number,
+      thumb,
       info
     );
 
@@ -4489,6 +4566,22 @@ function handlePlaybackState(
     updatedAt:
     performance.now()
   };
+
+  if (
+    state.playback.status ===
+    "playing"
+  ) {
+    if (!state.animationFrame) {
+      startPlaybackAnimation();
+    }
+  } else if (state.animationFrame) {
+    cancelAnimationFrame(
+      state.animationFrame
+    );
+
+    state.animationFrame =
+    null;
+  }
 
   updatePlaybackUI();
   updateActiveLyric();
@@ -4906,11 +4999,14 @@ function detachedWindowHtml() {
     width: 100%;
     height: 100%;
     min-height: 180px;
-    padding: 18px;
+    padding: 16px;
     display: grid;
     grid-template-columns: 72px minmax(0, 1fr);
     grid-template-rows: auto auto auto;
     gap: 12px;
+    border: 0;
+    border-radius: 0;
+    overflow: hidden;
     background:
     linear-gradient(
       145deg,
@@ -4923,10 +5019,11 @@ function detachedWindowHtml() {
     width: 72px;
     height: 72px;
     overflow: hidden;
-    border-radius: 12px;
+    border-radius: 10px;
     background: rgba(255,255,255,.06);
     background-position: center;
     background-size: cover;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
   }
 
   .cover img {
@@ -4981,7 +5078,38 @@ function detachedWindowHtml() {
 
   input[type="range"] {
     width: 100%;
-    accent-color: var(--accent, #1ed760);
+    height: 3px;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    border-radius: 100px;
+    outline: none;
+    background: rgba(255,255,255,.19);
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 9px;
+    height: 9px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent, #1ed760);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 9px;
+    height: 9px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent, #1ed760);
+  }
+
+  input[type="range"]:focus-visible {
+    outline: 2px solid var(--accent, #1ed760);
+    outline-offset: 4px;
   }
 
   .controls {
@@ -5005,8 +5133,17 @@ function detachedWindowHtml() {
     cursor: pointer;
   }
 
+  button:focus {
+    outline: none;
+  }
+
   button:hover {
     background: rgba(255,255,255,.07);
+  }
+
+  button:focus-visible {
+    outline: 2px solid var(--accent, #1ed760);
+    outline-offset: 2px;
   }
 
   button svg {
@@ -5326,7 +5463,7 @@ function openDetachedPlayer() {
     window.open(
       "",
       "nuclear-mini-player",
-      "popup=yes,width=430,height=230,resizable=yes"
+      "popup=yes,width=430,height=230,resizable=yes,menubar=no,toolbar=no,location=no,status=no,scrollbars=no"
     );
   } catch (error) {
     log(
@@ -5476,43 +5613,59 @@ function startPlaybackAnimation() {
     );
   }
 
-  const tick = () => {
+  let lastDetachedSync = 0;
+
+  const tick = (now) => {
     if (
-      state.playback.status ===
+      state.playback.status !==
       "playing"
     ) {
-      const now =
-      performance.now();
+      state.animationFrame =
+      null;
 
-      const elapsed =
+      return;
+    }
+
+    const elapsed =
+    Math.max(
+      0,
       (now -
       state.playback.updatedAt) /
-      1000;
+      1000
+    );
 
-      let estimated =
-      state.playback.seek +
-      elapsed;
+    let estimated =
+    state.playback.seek +
+    elapsed;
 
-      if (
-        state.playback.duration >
-        0
-      ) {
-        estimated =
-        clamp(
-          estimated,
-          0,
-          state.playback.duration
-        );
-      }
+    if (
+      state.playback.duration >
+      0
+    ) {
+      estimated =
+      clamp(
+        estimated,
+        0,
+        state.playback.duration
+      );
+    }
 
-      state.playback.seek =
-      estimated;
+    state.playback.seek =
+    estimated;
 
-      state.playback.updatedAt =
-      now;
+    state.playback.updatedAt =
+    now;
 
-      updateProgressUI();
-      updateActiveLyric();
+    updateProgressUI();
+    updateActiveLyric();
+
+    // the detached window needs a smooth clock, not a 60fps message storm
+    if (
+      now - lastDetachedSync >=
+      100
+    ) {
+      lastDetachedSync = now;
+
       syncDetachedPlayer();
     }
 
@@ -5575,6 +5728,9 @@ bottom: 96px;
 
 z-index: 99999;
 
+box-sizing:
+border-box;
+
 width: min(
   430px,
   calc(100vw - 28px)
@@ -5586,9 +5742,9 @@ color: #fff;
 
 border:
 1px solid
-rgba(255,255,255,.10);
+rgba(255,255,255,.08);
 
-border-radius: 17px;
+border-radius: 16px;
 
 overflow: hidden;
 
@@ -5599,22 +5755,16 @@ linear-gradient(
                 rgba(10,10,12,.99)
 );
 
+background-clip:
+padding-box;
+
 box-shadow:
 0 22px 65px
 rgba(0,0,0,.68);
 
-backdrop-filter:
-blur(30px)
-saturate(1.2);
-
--webkit-backdrop-filter:
-blur(30px)
-saturate(1.2);
-
 user-select: none;
 
 transition:
-width .22s ease,
 opacity .18s ease,
 transform .18s ease;
 }
@@ -5666,17 +5816,64 @@ translateY(10px);
 pointer-events: none;
 }
 
-#nuke-mp-panel.nuke-mp-fullscreen {
-inset: 16px;
-right: 16px;
-bottom: 16px;
+#nuke-mp-panel.nuke-mp-fullscreen,
+#nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open {
+inset: 0;
+right: 0;
+bottom: 0;
 
 width: auto;
 height: auto;
 
 min-height: 0;
+max-width: none;
+max-height: none;
 
-border-radius: 16px;
+display: flex;
+flex-direction: column;
+
+border: 0;
+border-radius: 0;
+
+box-shadow: none;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-header,
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-footer,
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-lyrics-panel {
+  flex: 0 0 auto;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-body {
+  width: min(900px, 100%);
+
+  flex: 1 1 auto;
+
+  box-sizing: border-box;
+
+  grid-template-columns:
+  112px
+  minmax(0,1fr);
+
+  align-content: center;
+
+  margin: 0 auto;
+
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-artwork {
+  width: 112px;
+  height: 112px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-title {
+  font-size: 20px;
+}
+
+#nuke-mp-panel.nuke-mp-fullscreen .nuke-mp-artist {
+  font-size: 13px;
 }
 
 .nuke-mp-header {
@@ -5891,7 +6088,7 @@ border-radius: 16px;
 
   overflow: hidden;
 
-  border-radius: 11px;
+  border-radius: 10px;
 
   background:
   rgba(255,255,255,.05);
@@ -5904,7 +6101,9 @@ border-radius: 16px;
 
   box-shadow:
   0 8px 24px
-  rgba(0,0,0,.28);
+  rgba(0,0,0,.28),
+  inset 0 0 0 1px
+  rgba(255,255,255,.06);
 }
 
 .nuke-mp-art-image {
@@ -5915,6 +6114,8 @@ border-radius: 16px;
 
   width: 100%;
   height: 100%;
+
+  border-radius: inherit;
 
   object-fit: cover;
 }
@@ -6286,7 +6487,10 @@ right: 25px;
 
 bottom: 300px;
 
-z-index: 99998;
+z-index: 100000;
+
+box-sizing:
+border-box;
 
 width:
 min(
@@ -6311,7 +6515,7 @@ color: #fff;
 
 border:
 1px solid
-rgba(255,255,255,.10);
+rgba(255,255,255,.08);
 
 border-radius: 16px;
 
@@ -6322,15 +6526,12 @@ linear-gradient(
                 rgba(9,9,11,.985)
 );
 
+background-clip:
+padding-box;
+
 box-shadow:
 0 22px 60px
 rgba(0,0,0,.65);
-
-backdrop-filter:
-blur(28px);
-
--webkit-backdrop-filter:
-blur(28px);
 }
 
 #nuke-mp-queue-panel[hidden] {
@@ -6505,14 +6706,54 @@ display: none;
   rgba(255,255,255,.045);
 }
 
-.nuke-mp-list-number {
+.nuke-mp-list-thumb {
+  position: relative;
+
+  width: 28px;
+  height: 28px;
+
+  display: grid;
+  place-items: center;
+
+  overflow: hidden;
+
+  border-radius: 7px;
+
   color:
   rgba(255,255,255,.28);
+
+  background:
+  rgba(255,255,255,.055);
+
+  box-shadow:
+  inset 0 0 0 1px
+  rgba(255,255,255,.06);
 
   font-size: 9px;
 
   font-variant-numeric:
   tabular-nums;
+}
+
+.nuke-mp-list-thumb-number {
+  position: relative;
+  z-index: 0;
+}
+
+.nuke-mp-list-thumb-image {
+  position: absolute;
+  inset: 0;
+
+  z-index: 1;
+
+  display: block;
+
+  width: 100%;
+  height: 100%;
+
+  border-radius: inherit;
+
+  object-fit: cover;
 }
 
 .nuke-mp-list-info {
@@ -6666,10 +6907,20 @@ display: none;
 }
 
 .nuke-mp-playlist-art {
+  position: relative;
+
   width: 42px;
   height: 42px;
 
-  border-radius: 7px;
+  display: grid;
+  place-items: center;
+
+  overflow: hidden;
+
+  border-radius: 8px;
+
+  color:
+  rgba(255,255,255,.40);
 
   background:
   linear-gradient(
@@ -6683,6 +6934,34 @@ display: none;
 
   background-size:
   cover;
+
+  box-shadow:
+  inset 0 0 0 1px
+  rgba(255,255,255,.06);
+
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.nuke-mp-playlist-art-label {
+  position: relative;
+  z-index: 0;
+}
+
+.nuke-mp-playlist-art-image {
+  position: absolute;
+  inset: 0;
+
+  z-index: 1;
+
+  display: block;
+
+  width: 100%;
+  height: 100%;
+
+  border-radius: inherit;
+
+  object-fit: cover;
 }
 
 .nuke-mp-playlist-info {
@@ -6789,9 +7068,6 @@ pointer-events: none;
 transition:
 opacity .18s ease,
 transform .18s ease;
-
-backdrop-filter:
-blur(14px);
 }
 
 #nuke-mp-toast.visible {
@@ -6802,6 +7078,52 @@ translate(
   -50%,
   0
 );
+}
+
+#nuke-mp-panel button:focus:not(:focus-visible),
+#nuke-mp-queue-panel button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+#nuke-mp-panel button:focus-visible,
+#nuke-mp-queue-panel button:focus-visible {
+  outline:
+  2px solid
+  var(--nuke-mp-accent);
+
+  outline-offset: 2px;
+}
+
+#nuke-mp-panel .nuke-mp-seek:focus-visible {
+  outline:
+  2px solid
+  var(--nuke-mp-accent);
+
+  outline-offset: 4px;
+}
+
+.nuke-mp-queue-content::-webkit-scrollbar,
+.nuke-mp-lyrics-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nuke-mp-queue-content::-webkit-scrollbar-track,
+.nuke-mp-lyrics-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nuke-mp-queue-content::-webkit-scrollbar-thumb,
+.nuke-mp-lyrics-body::-webkit-scrollbar-thumb {
+  border-radius: 100px;
+
+  background:
+  rgba(255,255,255,.16);
+}
+
+.nuke-mp-queue-content::-webkit-scrollbar-thumb:hover,
+.nuke-mp-lyrics-body::-webkit-scrollbar-thumb:hover {
+  background:
+  rgba(255,255,255,.26);
 }
 
 @media (max-width: 600px) {

@@ -113,9 +113,9 @@ all nine live under the plugin in **Preferences -> Plugins**:
 
 thanks to [Naufal48 (@naufaljct48)](https://github.com/naufaljct48) for the
 track-change, seek-estimate, lyrics-autoscroll, and lyrics-lookup fixes
-that landed in 1.8.3.
+that landed in 1.8.3 and remain in 1.8.4.
 
 ## version
 
-1.8.3. the plugin store can lag by a release - the registry pins a
+1.8.4. the plugin store can lag by a release - the registry pins a
 version, so it shows the last one submitted there.
