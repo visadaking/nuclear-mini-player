@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.8.6
+ * Nuclear Mini Player v1.8.7
  */
 
 // settings
@@ -413,6 +413,7 @@ function createButton(className, label, icon = "") {
 
   button.type = "button";
   button.setAttribute("aria-label", label);
+  button.title = label;
 
   if (icon) {
     button.innerHTML = icon;
@@ -1978,6 +1979,15 @@ const ICONS = {
   </svg>
   `,
 
+  exitFullscreen: `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M8 3v3a2 2 0 0 1-2 2H3"/>
+  <path d="M16 3v3a2 2 0 0 0 2 2h3"/>
+  <path d="M21 16h-3a2 2 0 0 0-2 2v3"/>
+  <path d="M3 16h3a2 2 0 0 1 2 2v3"/>
+  </svg>
+  `,
+
   close: `
   <svg viewBox="0 0 24 24" aria-hidden="true">
   <path d="M18 6 6 18"/>
@@ -2897,6 +2907,11 @@ function updatePlaybackUI() {
         ? text("pause")
         : text("play")
       );
+
+      play.title =
+      playing
+      ? text("pause")
+      : text("play");
     }
   }
 
@@ -2935,6 +2950,11 @@ function updatePlaybackUI() {
       ? text("unmute")
       : text("mute")
     );
+
+    volume.title =
+    muted
+    ? text("unmute")
+    : text("mute");
   }
 }
 
@@ -3100,6 +3120,8 @@ function renderInterfaceText() {
       "aria-label",
       label
     );
+
+    element.title = label;
   }
 
   const mode =
@@ -3144,6 +3166,8 @@ function renderInterfaceSource() {
 
 function hidePlayer() {
   state.hidden = true;
+  state.fullscreen = false;
+  applyFullscreen();
   panel?.classList.add(
     "nuke-mp-hidden"
   );
@@ -3211,6 +3235,14 @@ function applyFullscreen() {
       "aria-label",
       label
     );
+
+    fullscreen.title =
+    label;
+
+    fullscreen.innerHTML =
+    state.fullscreen
+    ? ICONS.exitFullscreen
+    : ICONS.fullscreen;
   }
 }
 
@@ -3271,7 +3303,7 @@ async function restartCurrentItem() {
     }
 
     await api.Queue.addNext(
-      [item.track]
+      [item.track.raw || item.track]
     );
 
     await api.Queue.goToIndex(
@@ -3325,21 +3357,38 @@ async function togglePlayback() {
         }
       } catch (_) {}
 
+      state.playback.status =
+      audio.paused
+      ? "paused"
+      : "playing";
+
       updatePlaybackUI();
     }
 
     return;
   }
 
+  const canReadState =
+  typeof playback.getState ===
+  "function";
+
   const before =
-  await readPlaybackState();
+  canReadState
+  ? await readPlaybackState()
+  : null;
 
   const shouldPause =
-  before?.status === "playing";
+  (before?.status ??
+  state.playback.status) ===
+  "playing";
+
+  let toggleFailed = false;
 
   try {
     await playback.toggle();
   } catch (error) {
+    toggleFailed = true;
+
     log(
       "playback toggle failed",
       error
@@ -3347,6 +3396,33 @@ async function togglePlayback() {
   }
 
   if (shouldPause) {
+    updatePlaybackUI();
+    syncDetachedPlayer();
+
+    return;
+  }
+
+  if (!canReadState) {
+    if (toggleFailed) {
+      const audio =
+      getAudioElement();
+
+      if (audio) {
+        try {
+          if (audio.paused) {
+            await audio.play();
+          } else {
+            audio.pause();
+          }
+        } catch (_) {}
+
+        state.playback.status =
+        audio.paused
+        ? "paused"
+        : "playing";
+      }
+    }
+
     updatePlaybackUI();
     syncDetachedPlayer();
 
@@ -4734,13 +4810,8 @@ function buildQueuePanel() {
     );
 }
 
-function toggleQueue() {
-  if (!state.settings.showQueue) {
-    return;
-  }
-
-  if (state.queueOpen) {
-    closeQueue();
+function openQueue(force = false) {
+  if (!force && !state.settings.showQueue) {
     return;
   }
 
@@ -4760,6 +4831,19 @@ function toggleQueue() {
   );
 
   renderQueuePanel();
+}
+
+function toggleQueue() {
+  if (!state.settings.showQueue) {
+    return;
+  }
+
+  if (state.queueOpen) {
+    closeQueue();
+    return;
+  }
+
+  openQueue();
 }
 
 function closeQueue() {
@@ -5417,6 +5501,7 @@ function detachedWindowHtml() {
   <button id="previous" aria-label="Previous"></button>
   <button id="play" class="play" aria-label="Play"></button>
   <button id="next" aria-label="Next"></button>
+  <button id="queue" aria-label="Queue"></button>
   </div>
   </div>
 
@@ -5432,7 +5517,10 @@ function detachedWindowHtml() {
     '<svg viewBox="0 0 24 24"><path d="m18 5-9 7 9 7V5Z"/><path d="M5 5v14"/></svg>',
 
     next:
-    '<svg viewBox="0 0 24 24"><path d="m6 5 9 7-9 7V5Z"/><path d="M19 5v14"/></svg>'
+    '<svg viewBox="0 0 24 24"><path d="m6 5 9 7-9 7V5Z"/><path d="M19 5v14"/></svg>',
+
+    queue:
+    '<svg viewBox="0 0 24 24"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>'
   };
 
   const channel =
@@ -5457,6 +5545,8 @@ function detachedWindowHtml() {
 
   const seek =
   document.getElementById("seek");
+
+  let seeking = false;
 
   const play =
   document.getElementById("play");
@@ -5519,13 +5609,53 @@ function detachedWindowHtml() {
     () => send("next")
   );
 
+  document.getElementById(
+    "queue"
+  ).innerHTML =
+  ICONS.queue;
+
+  document.getElementById(
+    "queue"
+  ).addEventListener(
+    "click",
+    () => send("queue")
+  );
+
+  seek.addEventListener(
+    "pointerdown",
+    () => {
+      seeking = true;
+    }
+  );
+
   seek.addEventListener(
     "input",
+    () => {
+      seeking = true;
+
+      send(
+        "seek",
+        Number(seek.value)
+      );
+    }
+  );
+
+  seek.addEventListener(
+    "change",
     () => {
       send(
         "seek",
         Number(seek.value)
       );
+
+      seeking = false;
+    }
+  );
+
+  seek.addEventListener(
+    "blur",
+    () => {
+      seeking = false;
     }
   );
 
@@ -5631,7 +5761,10 @@ function detachedWindowHtml() {
         const value =
         String(data.seek);
 
-        if (seek.value !== value) {
+        if (
+          !seeking &&
+          seek.value !== value
+        ) {
           seek.value =
           value;
         }
@@ -5805,6 +5938,14 @@ async function handleDetachedCommand(
           event.data.value
         )
       );
+      break;
+
+    case "queue":
+      openQueue(true);
+
+      try {
+        window.focus();
+      } catch (_) {}
       break;
   }
 }
@@ -6174,6 +6315,11 @@ function renderDetachedOverlayState(
         ? text("pause")
         : text("play")
       );
+
+      play.title =
+      playing
+      ? text("pause")
+      : text("play");
     }
   }
 }
@@ -6210,15 +6356,34 @@ function openDetachedOverlay() {
     "nuclear | player"
   );
 
+  const headerActions = createElement(
+    "div",
+    "nuke-mp-detached-actions"
+  );
+
+  const queue = createButton(
+    "nuke-mp-detached-close",
+    text("queue"),
+    ICONS.queue
+  );
+
+  queue.id =
+  "nuke-mp-detached-queue";
+
   const close = createButton(
     "nuke-mp-detached-close",
-    text("attach"),
+    text("close"),
     ICONS.close
+  );
+
+  headerActions.append(
+    queue,
+    close
   );
 
   header.append(
     brand,
-    close
+    headerActions
   );
 
   const body = createElement(
@@ -6392,6 +6557,17 @@ function openDetachedOverlay() {
     }
   );
 
+  queue.addEventListener(
+    "click",
+    () => {
+      openQueue(true);
+
+      try {
+        window.focus();
+      } catch (_) {}
+    }
+  );
+
   close.addEventListener(
     "click",
     () => {
@@ -6399,18 +6575,25 @@ function openDetachedOverlay() {
     }
   );
 
-  seek.addEventListener(
-    "pointerdown",
-    () => {
-      seek.dataset.seeking =
-      "true";
-    }
-  );
+  const startSeeking = () => {
+    seek.dataset.seeking =
+    "true";
+  };
 
   const stopSeeking = () => {
     seek.dataset.seeking =
     "false";
   };
+
+  seek.addEventListener(
+    "pointerdown",
+    startSeeking
+  );
+
+  seek.addEventListener(
+    "input",
+    startSeeking
+  );
 
   seek.addEventListener(
     "pointerup",
@@ -6419,6 +6602,11 @@ function openDetachedOverlay() {
 
   seek.addEventListener(
     "pointercancel",
+    stopSeeking
+  );
+
+  seek.addEventListener(
+    "blur",
     stopSeeking
   );
 
@@ -8394,6 +8582,12 @@ cursor: grab;
 cursor: grabbing;
 }
 
+.nuke-mp-detached-actions {
+display: flex;
+align-items: center;
+gap: 2px;
+}
+
 .nuke-mp-detached-brand {
 color: var(--nuke-mp-accent);
 
@@ -8662,6 +8856,18 @@ background: var(--nuke-mp-accent);
 color: #050505;
 background: var(--nuke-mp-accent);
 filter: brightness(1.06);
+}
+
+@media (max-width: 900px) {
+  #nuke-mp-panel.nuke-mp-fullscreen.nuke-mp-lyrics-open {
+    grid-template-columns: minmax(0,1fr);
+    grid-template-rows: auto minmax(0,1fr) minmax(160px,40vh) auto;
+    grid-template-areas:
+      "mp-header"
+      "mp-body"
+      "mp-lyrics"
+      "mp-footer";
+  }
 }
 `;
 
