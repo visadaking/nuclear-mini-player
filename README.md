@@ -41,25 +41,3 @@ resizable and draggable interface (it stays where you put it)
 
 -------------------------------------------------------------
 version 1.8.7 beta as of 22/10/2026
-
-changelog -
-
-```
-1.7.10 - version and startup fixes
-
-1.8.0 - dev rework
-
-1.8.1 - transport fallbacks for older Nuclear builds
-
-1.8.2 - panel readability, idle state, lyrics sizing
-
-1.8.3 - four fixes from @naufaljct48 (track change handling, seek estimate, header autoscroll, lyrics lookup)
-
-1.8.4 - clean frames and smoother playback
-
-1.8.5 - fullscreen rebuilt
-
-1.8.6 - the play button actually starts playback now, and the detached player works even when your system blocks popup windows
-
-1.8.7 - queue access from the detached player, working fullscreen exit button, seek slider fixes
-```
