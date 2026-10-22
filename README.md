@@ -52,9 +52,11 @@ doing - and pops out into its own window when you want it elsewhere.
   playlists.
 - **system media keys.** through MediaSession: play/pause, next,
   previous, and lockscreen controls.
-- **detach into its own window.** pop the player out into a real,
-  resizable window that stays in sync with the panel. needs one click -
-  windows that open themselves get blocked.
+- **detach into its own window.** pop the player out into a separate,
+  resizable window that stays in sync with the panel. on hosts that block
+  `window.open` (Tauri on Linux), it falls back to a floating in-app
+  window, so the detach button always works. needs one click - windows
+  that open themselves get blocked.
 - **a real fullscreen view.** the panel fills the window on a solid
   backdrop with large centered artwork and controls; lyrics open in a
   side panel and the queue slides in as a side drawer. copy or refetch
@@ -94,8 +96,9 @@ all nine live under the plugin in **Preferences -> Plugins**:
 ## notes (please read)
 
 - the panel is drawn **inside Nuclear's window**, pinned to the corner.
-  it is not a separate always-on-top window - only the detached player is
-  its own window.
+  it is not a separate always-on-top window. the detached player opens
+  its own window when the host allows it, and otherwise a floating
+  in-app window.
 - **dragging lasts for the session.** move the panel where you like; after
   a reload it returns to its corner. the position is not saved yet.
 - **the panel is not hand-resizable.** it widens on its own when you open
@@ -114,13 +117,19 @@ all nine live under the plugin in **Preferences -> Plugins**:
 
 thanks to [Naufal48 (@naufaljct48)](https://github.com/naufaljct48) for the
 track-change, seek-estimate, lyrics-autoscroll, and lyrics-lookup fixes
-that landed in 1.8.3 and remain in 1.8.5.
+that landed in 1.8.3 and remain in 1.8.6.
 
 ## version
 
-1.8.5. fullscreen was rebuilt into a real big view: solid backdrop,
-large centered artwork and controls, lyrics in a side panel, and the
-queue in a side drawer. 1.8.4 cleaned up the frames and the playback
-loop; 1.8.3 shipped the four @naufaljct48 fixes. the plugin store can lag
-by a release - the registry pins a version, so it shows the last one
+1.8.6 fixes the Play button on Nuclear 1.51.x: when the host silently
+ignored a play request because the current queue item had no mounted
+source, the plugin now restarts that item instead of leaving the button
+dead. the detach button also falls back to a floating in-app window when
+the host blocks `window.open`, so it works on Tauri/WebKitGTK.
+
+1.8.5 rebuilt fullscreen into a real big view: solid backdrop, large
+centered artwork and controls, lyrics in a side panel, and the queue in
+a side drawer. 1.8.4 cleaned up the frames and the playback loop; 1.8.3
+shipped the four @naufaljct48 fixes. the plugin store can lag by a
+release - the registry pins a version, so it shows the last one
 submitted there.

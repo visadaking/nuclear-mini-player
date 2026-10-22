@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.8.4 
+ * Nuclear Mini Player v1.8.6
  */
 
 // settings
@@ -348,6 +348,8 @@ const state = {
   },
 
   detachedWindow: null,
+  detachedPip: null,
+  detachedOverlay: null,
   detachedChannel: null,
 
   cleanup: [],
@@ -3212,32 +3214,203 @@ function applyFullscreen() {
   }
 }
 
-async function togglePlayback() {
-  if (api?.Playback?.toggle) {
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function readPlaybackState() {
+  try {
+    return await api?.Playback?.getState?.();
+  } catch (error) {
+    log(
+      "playback state read failed",
+      error
+    );
+
+    return null;
+  }
+}
+
+/*
+ * Nuclear 1.51.x silently ignores Playback.toggle() when the current queue
+ * item has no mounted audio source. This happens, for example, after a
+ * restart or after a queue item is selected without resolving its stream.
+ *
+ * Re-selecting the current index is a no-op in the host, so insert a fresh
+ * copy of the current track right after it, jump to that copy (which makes
+ * the host resolve and mount it), then drop the stale original. This works
+ * for a queue of any length without touching the other tracks.
+ */
+async function restartCurrentItem() {
+  try {
+    const queue =
+    await api?.Queue?.getQueue?.();
+
+    const items =
+    Array.isArray(queue?.items)
+    ? queue.items
+    : [];
+
+    const index =
+    Number.isInteger(
+      queue?.currentIndex
+    )
+    ? queue.currentIndex
+    : -1;
+
+    const item =
+    items[index];
+
+    if (
+      !item?.track ||
+      index < 0
+    ) {
+      return false;
+    }
+
+    await api.Queue.addNext(
+      [item.track]
+    );
+
+    await api.Queue.goToIndex(
+      index + 1
+    );
+
+    await wait(220);
+
     try {
-      await api.Playback.toggle();
-      return;
+      if (api.Queue.removeByIds) {
+        await api.Queue.removeByIds(
+          [item.id]
+        );
+      } else if (api.Queue.removeByIndices) {
+        await api.Queue.removeByIndices(
+          [index]
+        );
+      }
     } catch (error) {
       log(
-        "playback toggle failed",
+        "could not drop the stale queue item",
         error
       );
     }
+
+    return true;
+  } catch (error) {
+    log(
+      "playback restart failed",
+      error
+    );
+
+    return false;
   }
+}
+
+async function togglePlayback() {
+  const playback =
+  api?.Playback;
+
+  if (!playback?.toggle) {
+    const audio =
+    getAudioElement();
+
+    if (audio) {
+      try {
+        if (audio.paused) {
+          await audio.play();
+        } else {
+          audio.pause();
+        }
+      } catch (_) {}
+
+      updatePlaybackUI();
+    }
+
+    return;
+  }
+
+  const before =
+  await readPlaybackState();
+
+  const shouldPause =
+  before?.status === "playing";
+
+  try {
+    await playback.toggle();
+  } catch (error) {
+    log(
+      "playback toggle failed",
+      error
+    );
+  }
+
+  if (shouldPause) {
+    updatePlaybackUI();
+    syncDetachedPlayer();
+
+    return;
+  }
+
+  let after =
+  await readPlaybackState();
+
+  if (after?.status === "playing") {
+    updatePlaybackUI();
+    syncDetachedPlayer();
+
+    return;
+  }
+
+  if (
+    await restartCurrentItem()
+  ) {
+    // give the host a moment to resolve and mount the source
+    await wait(180);
+
+    try {
+      await playback.play?.();
+    } catch (_) {}
+
+    after =
+    await readPlaybackState();
+  }
+
+  if (after?.status !== "playing") {
+    const audio =
+    getAudioElement();
+
+    if (audio?.paused) {
+      try {
+        await audio.play();
+      } catch (_) {}
+    }
+  }
+
+  updatePlaybackUI();
+  updateProgressUI();
+  syncDetachedPlayer();
+
+  after =
+  await readPlaybackState();
 
   const audio =
   getAudioElement();
 
-  if (audio) {
-    try {
-      if (audio.paused) {
-        await audio.play();
-      } else {
-        audio.pause();
-      }
-    } catch (_) {}
+  if (
+    after?.status !== "playing" &&
+    (!audio || audio.paused)
+  ) {
+    log(
+      "playback could not be started",
+      after?.status ||
+      "unknown state"
+    );
 
-    updatePlaybackUI();
+    showToast(
+      text("nothingPlaying")
+    );
   }
 }
 
@@ -5530,21 +5703,52 @@ function getDetachedState() {
 }
 
 function syncDetachedPlayer() {
-  if (
-    !state.detachedWindow ||
-    state.detachedWindow.closed
-  ) {
+  const popup =
+  state.detachedWindow &&
+  !state.detachedWindow.closed
+  ? state.detachedWindow
+  : null;
+
+  if (state.detachedWindow && !popup) {
     state.detachedWindow = null;
+  }
+
+  const pip =
+  state.detachedPip &&
+  !state.detachedPip.closed
+  ? state.detachedPip
+  : null;
+
+  if (state.detachedPip && !pip) {
+    state.detachedPip = null;
+  }
+
+  const data = getDetachedState();
+
+  if (state.detachedOverlay) {
+    renderDetachedOverlayState(
+      data
+    );
+  }
+
+  if (!popup && !pip) {
     return;
   }
 
   const message = {
     type: "state",
-    state: getDetachedState()
+    state: data
   };
 
   try {
-    state.detachedWindow.postMessage(
+    popup?.postMessage(
+      message,
+      "*"
+    );
+  } catch (_) {}
+
+  try {
+    pip?.postMessage(
       message,
       "*"
     );
@@ -5557,17 +5761,710 @@ function syncDetachedPlayer() {
   } catch (_) {}
 }
 
-function openDetachedPlayer() {
+function isDetachedPlayerOpen() {
+  return Boolean(
+    (state.detachedWindow &&
+    !state.detachedWindow.closed) ||
+    (state.detachedPip &&
+    !state.detachedPip.closed) ||
+    (state.detachedOverlay &&
+    state.detachedOverlay.isConnected)
+  );
+}
+
+async function handleDetachedCommand(
+  event
+) {
   if (
-    state.detachedWindow &&
-    !state.detachedWindow.closed
+    event.data?.type !==
+    "command"
   ) {
-    state.detachedWindow.focus();
-    syncDetachedPlayer();
     return;
   }
 
-  let detachedWindow;
+  switch (event.data.action) {
+    case "ready":
+      syncDetachedPlayer();
+      break;
+
+    case "previous":
+      await playPrevious();
+      break;
+
+    case "next":
+      await playNext();
+      break;
+
+    case "toggle":
+      await togglePlayback();
+      break;
+
+    case "seek":
+      await seekTo(
+        Number(
+          event.data.value
+        )
+      );
+      break;
+  }
+}
+
+function ensureDetachedChannel() {
+  if (!("BroadcastChannel" in window)) {
+    return null;
+  }
+
+  if (!state.detachedChannel) {
+    state.detachedChannel =
+    new BroadcastChannel(
+      "nuclear-mini-player-detached"
+    );
+
+    state.detachedChannel.addEventListener(
+      "message",
+      handleDetachedCommand
+    );
+  }
+
+  return state.detachedChannel;
+}
+
+function attachDetachedSurface(
+  target
+) {
+  try {
+    target.document.open();
+    target.document.write(
+      detachedWindowHtml()
+    );
+    target.document.close();
+  } catch (error) {
+    log(
+      "detached surface render failed",
+      error
+    );
+
+    return false;
+  }
+
+  ensureDetachedChannel();
+
+  try {
+    target.addEventListener(
+      "beforeunload",
+      () => {
+        if (
+          state.detachedWindow ===
+          target
+        ) {
+          state.detachedWindow =
+          null;
+        }
+
+        if (
+          state.detachedPip ===
+          target
+        ) {
+          state.detachedPip =
+          null;
+        }
+
+        syncDetachedPlayer();
+      }
+    );
+  } catch (_) {}
+
+  syncDetachedPlayer();
+
+  return true;
+}
+
+async function requestPictureInPicturePlayer() {
+  const pipApi =
+  window.documentPictureInPicture;
+
+  if (!pipApi?.requestWindow) {
+    return null;
+  }
+
+  try {
+    return await pipApi.requestWindow({
+      width: 430,
+      height: 230
+    });
+  } catch (error) {
+    log(
+      "picture-in-picture window failed",
+      error
+    );
+
+    return null;
+  }
+}
+
+function makeDetachedOverlayDraggable(
+  root,
+  handle
+) {
+  let dragging = false;
+
+  let startX = 0;
+  let startY = 0;
+  let originX = 0;
+  let originY = 0;
+
+  const stop = (event) => {
+    if (!dragging) {
+      return;
+    }
+
+    dragging = false;
+
+    try {
+      handle.releasePointerCapture(
+        event.pointerId
+      );
+    } catch (_) {}
+  };
+
+  handle.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (
+        event.button !== 0 ||
+        event.target.closest(
+          "button"
+        )
+      ) {
+        return;
+      }
+
+      const rect =
+      root.getBoundingClientRect();
+
+      dragging = true;
+      startX = event.clientX;
+      startY = event.clientY;
+      originX = rect.left;
+      originY = rect.top;
+
+      root.style.left =
+      `${rect.left}px`;
+
+      root.style.top =
+      `${rect.top}px`;
+
+      root.style.right =
+      "auto";
+
+      root.style.bottom =
+      "auto";
+
+      handle.setPointerCapture(
+        event.pointerId
+      );
+    }
+  );
+
+  handle.addEventListener(
+    "pointermove",
+    (event) => {
+      if (!dragging) {
+        return;
+      }
+
+      const x =
+      originX +
+      event.clientX -
+      startX;
+
+      const y =
+      originY +
+      event.clientY -
+      startY;
+
+      root.style.left =
+      `${clamp(
+        x,
+        0,
+        Math.max(
+          0,
+          window.innerWidth - 120
+        )
+      )}px`;
+
+      root.style.top =
+      `${clamp(
+        y,
+        0,
+        Math.max(
+          0,
+          window.innerHeight - 80
+        )
+      )}px`;
+    }
+  );
+
+  handle.addEventListener(
+    "pointerup",
+    stop
+  );
+
+  handle.addEventListener(
+    "pointercancel",
+    stop
+  );
+}
+
+function renderDetachedOverlayState(
+  data
+) {
+  const root =
+  state.detachedOverlay;
+
+  if (
+    !root ||
+    !root.isConnected
+  ) {
+    state.detachedOverlay =
+    null;
+
+    return;
+  }
+
+  root.style.setProperty(
+    "--nuke-mp-accent",
+    data.accent || "#1ed760"
+  );
+
+  const title =
+  root.querySelector(
+    "#nuke-mp-detached-title"
+  );
+
+  const artist =
+  root.querySelector(
+    "#nuke-mp-detached-artist"
+  );
+
+  const cover =
+  root.querySelector(
+    "#nuke-mp-detached-art"
+  );
+
+  const current =
+  root.querySelector(
+    "#nuke-mp-detached-current"
+  );
+
+  const duration =
+  root.querySelector(
+    "#nuke-mp-detached-duration"
+  );
+
+  const seek =
+  root.querySelector(
+    "#nuke-mp-detached-seek"
+  );
+
+  const play =
+  root.querySelector(
+    "#nuke-mp-detached-play"
+  );
+
+  if (
+    title &&
+    title.textContent !== data.title
+  ) {
+    title.textContent =
+    data.title;
+  }
+
+  if (
+    artist &&
+    artist.textContent !== data.artist
+  ) {
+    artist.textContent =
+    data.artist;
+  }
+
+  if (cover) {
+    if (data.artwork) {
+      if (
+        cover.getAttribute(
+          "src"
+        ) !== data.artwork
+      ) {
+        cover.src =
+        data.artwork;
+      }
+
+      cover.hidden =
+      false;
+    } else {
+      cover.removeAttribute(
+        "src"
+      );
+
+      cover.hidden =
+      true;
+    }
+  }
+
+  if (current) {
+    current.textContent =
+    formatTime(data.seek);
+  }
+
+  if (duration) {
+    duration.textContent =
+    formatTime(data.duration);
+  }
+
+  if (
+    seek &&
+    seek.dataset.seeking !==
+    "true"
+  ) {
+    const max =
+    String(data.duration || 0);
+
+    if (seek.max !== max) {
+      seek.max =
+      max;
+    }
+
+    seek.value =
+    String(data.seek || 0);
+
+    seek.style.setProperty(
+      "--nuke-mp-progress",
+      `${
+        data.duration > 0
+        ? clamp(
+          (data.seek / data.duration) *
+          100,
+          0,
+          100
+        )
+        : 0
+      }%`
+    );
+  }
+
+  if (play) {
+    const playing =
+    data.status === "playing";
+
+    if (
+      play.dataset.status !==
+      String(playing)
+    ) {
+      play.dataset.status =
+      String(playing);
+
+      play.innerHTML =
+      playing
+      ? ICONS.pause
+      : ICONS.play;
+
+      play.setAttribute(
+        "aria-label",
+        playing
+        ? text("pause")
+        : text("play")
+      );
+    }
+  }
+}
+
+function openDetachedOverlay() {
+  if (
+    state.detachedOverlay &&
+    state.detachedOverlay.isConnected
+  ) {
+    return;
+  }
+
+  const root = createElement(
+    "section",
+    "nuke-mp-detached"
+  );
+
+  root.id =
+  "nuke-mp-detached-overlay";
+
+  root.setAttribute(
+    "aria-label",
+    text("detached")
+  );
+
+  const header = createElement(
+    "div",
+    "nuke-mp-detached-header"
+  );
+
+  const brand = createElement(
+    "span",
+    "nuke-mp-detached-brand",
+    "nuclear | player"
+  );
+
+  const close = createButton(
+    "nuke-mp-detached-close",
+    text("attach"),
+    ICONS.close
+  );
+
+  header.append(
+    brand,
+    close
+  );
+
+  const body = createElement(
+    "div",
+    "nuke-mp-detached-body"
+  );
+
+  const artwork = createElement(
+    "div",
+    "nuke-mp-detached-artwork"
+  );
+
+  const image =
+  document.createElement("img");
+
+  image.id =
+  "nuke-mp-detached-art";
+
+  image.alt = "";
+  image.draggable = false;
+  image.hidden = true;
+
+  const placeholder = createElement(
+    "div",
+    "nuke-mp-detached-placeholder",
+    "N"
+  );
+
+  artwork.append(
+    image,
+    placeholder
+  );
+
+  const metadata = createElement(
+    "div",
+    "nuke-mp-detached-metadata"
+  );
+
+  const title = createElement(
+    "div",
+    "nuke-mp-detached-title"
+  );
+
+  title.id =
+  "nuke-mp-detached-title";
+
+  const artist = createElement(
+    "div",
+    "nuke-mp-detached-artist"
+  );
+
+  artist.id =
+  "nuke-mp-detached-artist";
+
+  metadata.append(
+    title,
+    artist
+  );
+
+  body.append(
+    artwork,
+    metadata
+  );
+
+  const progress = createElement(
+    "div",
+    "nuke-mp-detached-progress"
+  );
+
+  const current = createElement(
+    "span",
+    "nuke-mp-detached-time",
+    "0:00"
+  );
+
+  current.id =
+  "nuke-mp-detached-current";
+
+  const seek =
+  document.createElement("input");
+
+  seek.type = "range";
+  seek.min = "0";
+  seek.max = "0";
+  seek.value = "0";
+  seek.step = "0.01";
+
+  seek.className =
+  "nuke-mp-detached-seek";
+
+  seek.id =
+  "nuke-mp-detached-seek";
+
+  seek.setAttribute(
+    "aria-label",
+    "Seek"
+  );
+
+  const duration = createElement(
+    "span",
+    "nuke-mp-detached-time",
+    "0:00"
+  );
+
+  duration.id =
+  "nuke-mp-detached-duration";
+
+  progress.append(
+    current,
+    seek,
+    duration
+  );
+
+  const controls = createElement(
+    "div",
+    "nuke-mp-detached-controls"
+  );
+
+  const previous = createButton(
+    "nuke-mp-detached-button",
+    text("previous"),
+    ICONS.previous
+  );
+
+  const play = createButton(
+    "nuke-mp-detached-button nuke-mp-detached-play",
+    text("play"),
+    ICONS.play
+  );
+
+  play.id =
+  "nuke-mp-detached-play";
+
+  const next = createButton(
+    "nuke-mp-detached-button",
+    text("next"),
+    ICONS.next
+  );
+
+  controls.append(
+    previous,
+    play,
+    next
+  );
+
+  root.append(
+    header,
+    body,
+    progress,
+    controls
+  );
+
+  previous.addEventListener(
+    "click",
+    () => {
+      void playPrevious();
+    }
+  );
+
+  play.addEventListener(
+    "click",
+    () => {
+      void togglePlayback();
+    }
+  );
+
+  next.addEventListener(
+    "click",
+    () => {
+      void playNext();
+    }
+  );
+
+  close.addEventListener(
+    "click",
+    () => {
+      closeDetachedPlayer();
+    }
+  );
+
+  seek.addEventListener(
+    "pointerdown",
+    () => {
+      seek.dataset.seeking =
+      "true";
+    }
+  );
+
+  const stopSeeking = () => {
+    seek.dataset.seeking =
+    "false";
+  };
+
+  seek.addEventListener(
+    "pointerup",
+    stopSeeking
+  );
+
+  seek.addEventListener(
+    "pointercancel",
+    stopSeeking
+  );
+
+  seek.addEventListener(
+    "change",
+    async () => {
+      stopSeeking();
+
+      await seekTo(
+        Number(seek.value)
+      );
+    }
+  );
+
+  makeDetachedOverlayDraggable(
+    root,
+    header
+  );
+
+  document.body.appendChild(
+    root
+  );
+
+  state.detachedOverlay =
+  root;
+
+  renderDetachedOverlayState(
+    getDetachedState()
+  );
+
+  syncDetachedPlayer();
+}
+
+async function openDetachedPlayer() {
+  if (isDetachedPlayerOpen()) {
+    try {
+      state.detachedWindow?.focus();
+      state.detachedPip?.focus?.();
+    } catch (_) {}
+
+    syncDetachedPlayer();
+
+    return;
+  }
+
+  let detachedWindow = null;
 
   try {
     detachedWindow =
@@ -5581,108 +6478,55 @@ function openDetachedPlayer() {
       "detached window failed",
       error
     );
-    return;
   }
 
-  if (!detachedWindow) {
-    showToast(
-      text("popupBlocked")
-    );
+  if (detachedWindow) {
+    state.detachedWindow =
+    detachedWindow;
 
-    return;
-  }
-
-  state.detachedWindow =
-  detachedWindow;
-
-  detachedWindow.document.open();
-  detachedWindow.document.write(
-    detachedWindowHtml()
-  );
-  detachedWindow.document.close();
-
-  state.detachedChannel =
-  "BroadcastChannel" in window
-  ? new BroadcastChannel(
-    "nuclear-mini-player-detached"
-  )
-  : null;
-
-  const receiveCommand =
-  async (event) => {
     if (
-      event.data?.type !==
-      "command"
+      attachDetachedSurface(
+        detachedWindow
+      )
     ) {
       return;
     }
 
-    switch (
-      event.data.action
-    ) {
-      case "ready":
-        syncDetachedPlayer();
-        break;
-
-      case "previous":
-        await playPrevious();
-        break;
-
-      case "next":
-        await playNext();
-        break;
-
-      case "toggle":
-        await togglePlayback();
-        break;
-
-      case "seek":
-        await seekTo(
-          Number(
-            event.data.value
-          )
-        );
-        break;
-    }
-  };
-
-  state.detachedChannel?.addEventListener(
-    "message",
-    receiveCommand
-  );
-
-  detachedWindow.addEventListener(
-    "beforeunload",
-    () => {
-      state.detachedWindow =
-      null;
-
-      state.detachedChannel?.close();
-      state.detachedChannel =
-      null;
-    }
-  );
-
-  addCleanup(() => {
-    state.detachedChannel?.removeEventListener(
-      "message",
-      receiveCommand
-    );
-
-    state.detachedChannel?.close();
-    state.detachedChannel =
+    state.detachedWindow =
     null;
-  });
 
-  addCleanup(() => {
     try {
-      if (state.detachedWindow) {
-        state.detachedWindow = null;
-      }
+      detachedWindow.close();
     } catch (_) {}
-  });
+  }
 
-  syncDetachedPlayer();
+  const pipWindow =
+  await requestPictureInPicturePlayer();
+
+  if (pipWindow) {
+    state.detachedPip =
+    pipWindow;
+
+    if (
+      attachDetachedSurface(
+        pipWindow
+      )
+    ) {
+      return;
+    }
+
+    state.detachedPip =
+    null;
+
+    try {
+      pipWindow.close();
+    } catch (_) {}
+  }
+
+  // Tauri/WebKitGTK does not implement window.open or document
+  // picture-in-picture. Fall back to a floating in-app window so the
+  // detach button always does something useful.
+  openDetachedOverlay();
 }
 
 function closeDetachedPlayer() {
@@ -5695,24 +6539,52 @@ function closeDetachedPlayer() {
     }
   } catch (_) {}
 
+  try {
+    if (
+      state.detachedPip &&
+      !state.detachedPip.closed
+    ) {
+      state.detachedPip.close();
+    }
+  } catch (_) {}
+
+  if (state.detachedOverlay) {
+    state.detachedOverlay.remove();
+
+    state.detachedOverlay =
+    null;
+  }
+
   state.detachedWindow =
   null;
 
-  state.detachedChannel?.close();
-  state.detachedChannel =
+  state.detachedPip =
   null;
+
+  if (state.detachedChannel) {
+    try {
+      state.detachedChannel.removeEventListener(
+        "message",
+        handleDetachedCommand
+      );
+    } catch (_) {}
+
+    try {
+      state.detachedChannel.close();
+    } catch (_) {}
+
+    state.detachedChannel =
+    null;
+  }
 }
 
 function toggleDetachedPlayer() {
-  if (
-    state.detachedWindow &&
-    !state.detachedWindow.closed
-  ) {
+  if (isDetachedPlayerOpen()) {
     closeDetachedPlayer();
     return;
   }
 
-  openDetachedPlayer();
+  void openDetachedPlayer();
 }
 
 // queue + playback animation
@@ -7455,6 +8327,341 @@ translate(
   width:
   calc(100vw - 28px);
   }
+}
+
+/* in-app fallback for hosts that block window.open (Tauri/WebKitGTK) */
+
+#nuke-mp-detached-overlay {
+--nuke-mp-accent: #1ed760;
+
+position: fixed;
+left: 60px;
+top: 72px;
+z-index: 100002;
+
+box-sizing: border-box;
+
+width: 390px;
+min-width: 300px;
+min-height: 196px;
+max-width: calc(100vw - 24px);
+max-height: calc(100vh - 24px);
+
+display: flex;
+flex-direction: column;
+gap: 8px;
+
+padding: 12px;
+
+overflow: hidden;
+resize: both;
+
+border: 1px solid rgba(255,255,255,.10);
+border-radius: 14px;
+
+background:
+linear-gradient(
+  145deg,
+  rgba(30,30,34,.97),
+  rgba(10,10,12,.99)
+);
+
+box-shadow:
+0 22px 65px rgba(0,0,0,.72);
+
+color: #fff;
+
+font-family:
+-apple-system,
+BlinkMacSystemFont,
+"Segoe UI",
+sans-serif;
+
+user-select: none;
+}
+
+.nuke-mp-detached-header {
+display: flex;
+align-items: center;
+justify-content: space-between;
+
+padding: 0 0 2px;
+
+cursor: grab;
+}
+
+.nuke-mp-detached-header:active {
+cursor: grabbing;
+}
+
+.nuke-mp-detached-brand {
+color: var(--nuke-mp-accent);
+
+font-size: 10px;
+font-weight: 700;
+letter-spacing: .2px;
+}
+
+.nuke-mp-detached-close {
+width: 24px;
+height: 24px;
+
+padding: 0;
+
+display: grid;
+place-items: center;
+
+border: 0;
+border-radius: 6px;
+
+color: rgba(255,255,255,.55);
+background: transparent;
+
+cursor: pointer;
+}
+
+.nuke-mp-detached-close:hover {
+color: #fff;
+background: rgba(255,255,255,.08);
+}
+
+.nuke-mp-detached-close svg {
+width: 13px;
+height: 13px;
+
+fill: none;
+stroke: currentColor;
+stroke-width: 2.2;
+stroke-linecap: round;
+}
+
+.nuke-mp-detached-body {
+display: grid;
+
+grid-template-columns:
+64px
+minmax(0,1fr);
+
+gap: 11px;
+
+align-items: center;
+
+min-width: 0;
+}
+
+.nuke-mp-detached-artwork {
+position: relative;
+
+width: 64px;
+height: 64px;
+
+overflow: hidden;
+
+border-radius: 9px;
+
+background: rgba(255,255,255,.05);
+
+box-shadow:
+inset 0 0 0 1px rgba(255,255,255,.06);
+}
+
+.nuke-mp-detached-artwork img {
+position: relative;
+z-index: 1;
+
+width: 100%;
+height: 100%;
+
+display: block;
+
+object-fit: cover;
+}
+
+.nuke-mp-detached-artwork img[hidden] {
+display: none;
+}
+
+.nuke-mp-detached-placeholder {
+position: absolute;
+inset: 0;
+
+display: grid;
+place-items: center;
+
+color: rgba(255,255,255,.30);
+
+font-size: 23px;
+font-weight: 800;
+}
+
+.nuke-mp-detached-metadata {
+min-width: 0;
+}
+
+.nuke-mp-detached-title,
+.nuke-mp-detached-artist {
+overflow: hidden;
+
+white-space: nowrap;
+text-overflow: ellipsis;
+}
+
+.nuke-mp-detached-title {
+font-size: 13px;
+font-weight: 700;
+}
+
+.nuke-mp-detached-artist {
+margin-top: 3px;
+
+color: rgba(255,255,255,.52);
+
+font-size: 11px;
+}
+
+.nuke-mp-detached-progress {
+display: grid;
+
+grid-template-columns:
+31px
+minmax(0,1fr)
+31px;
+
+gap: 7px;
+
+align-items: center;
+}
+
+.nuke-mp-detached-time {
+color: rgba(255,255,255,.43);
+
+font-size: 9px;
+font-variant-numeric: tabular-nums;
+}
+
+.nuke-mp-detached-time:last-child {
+text-align: right;
+}
+
+.nuke-mp-detached-seek {
+--nuke-mp-progress: 0%;
+
+width: 100%;
+height: 3px;
+
+margin: 0;
+
+appearance: none;
+-webkit-appearance: none;
+
+border: 0;
+border-radius: 100px;
+
+outline: none;
+
+background:
+linear-gradient(
+  to right,
+  var(--nuke-mp-accent) 0%,
+  var(--nuke-mp-accent) var(--nuke-mp-progress),
+  rgba(255,255,255,.19) var(--nuke-mp-progress),
+  rgba(255,255,255,.19) 100%
+);
+
+cursor: pointer;
+}
+
+.nuke-mp-detached-seek::-webkit-slider-thumb {
+appearance: none;
+-webkit-appearance: none;
+
+width: 9px;
+height: 9px;
+
+border: 0;
+border-radius: 50%;
+
+background: var(--nuke-mp-accent);
+}
+
+.nuke-mp-detached-seek::-moz-range-thumb {
+width: 9px;
+height: 9px;
+
+border: 0;
+border-radius: 50%;
+
+background: var(--nuke-mp-accent);
+}
+
+.nuke-mp-detached-controls {
+display: flex;
+align-items: center;
+justify-content: center;
+
+gap: 18px;
+
+padding-top: 1px;
+}
+
+.nuke-mp-detached-button {
+width: 32px;
+height: 32px;
+
+padding: 0;
+
+display: inline-flex;
+align-items: center;
+justify-content: center;
+
+border: 0;
+border-radius: 8px;
+
+color: rgba(255,255,255,.68);
+background: transparent;
+
+cursor: pointer;
+
+transition:
+color .15s ease,
+background .15s ease,
+transform .15s ease;
+}
+
+.nuke-mp-detached-button:hover {
+color: #fff;
+background: rgba(255,255,255,.08);
+}
+
+.nuke-mp-detached-button:active {
+transform: scale(.95);
+}
+
+.nuke-mp-detached-button svg {
+width: 15px;
+height: 15px;
+
+fill: none;
+stroke: currentColor;
+stroke-width: 2.1;
+stroke-linecap: round;
+stroke-linejoin: round;
+}
+
+.nuke-mp-detached-play {
+width: 36px;
+height: 36px;
+
+border-radius: 50%;
+
+color: #050505;
+background: var(--nuke-mp-accent);
+}
+
+.nuke-mp-detached-play:hover {
+color: #050505;
+background: var(--nuke-mp-accent);
+filter: brightness(1.06);
 }
 `;
 
