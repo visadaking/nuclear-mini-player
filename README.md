@@ -61,5 +61,5 @@ changelog -
 
 1.8.6 - the play button actually starts playback now, and the detached player works even when your system blocks popup windows
 
-1.8.7 - queue access from the detached player, working fullscreen exit button, seek slider that doesn't fight you
+1.8.7 - queue access from the detached player, working fullscreen exit button, seek slider fixes
 ```
