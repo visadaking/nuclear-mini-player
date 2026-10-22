@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something broke — tell it plainly, paste the diagnostics
+about: Something broke. Tell it plainly, paste the diagnostics
 title: "[bug] "
 ---
 
@@ -22,7 +22,7 @@ title: "[bug] "
 
 <!-- attaching logs/screenshots is mandatory if they exist. -->
 
-## Example track (artist — title that triggers it, if any)
+## Example track (artist, title that triggers it, if any)
 
 ---
 

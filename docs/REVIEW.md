@@ -1,4 +1,4 @@
-# Review checklist — pass all five before any change ships
+# Review checklist: pass all five before any change ships
 
 1. **Plain words.** UI strings and docs a non-technical friend follows.
 2. **Host-tolerant.** Every `api.*` call feature-checked with fallback;
