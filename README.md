@@ -68,7 +68,6 @@ doing - and pops out into its own window when you want it elsewhere.
 index.js        the whole plugin - player, lyrics, queue, popup, styles
 package.json    manifest + Nuclear metadata (displayName, categories)
 .github/workflows/release.yml  tag -> plugin.zip, version checked
-AGENTS.md       house notes for helpers (humans can ignore it)
 docs/REVIEW.md  the checklist every change passes
 ```
 
