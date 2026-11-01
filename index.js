@@ -765,7 +765,7 @@ async function fetchJson(url, options = {}) {
     // so strip it for host fetches (stale-request guards still apply).
     const response = api?.Http?.fetch
     ? await api.Http.fetch(url, (({ signal, ...rest }) => rest)(options))
-    : await fetch(url, options);
+    : await Promise.reject(new Error("api.Http.fetch is unavailable"));
 
     if (!response.ok) {
       return null;
