@@ -338,6 +338,9 @@ const state = {
   dragOffsetY: 0,
   dragStartX: 0,
   dragStartY: 0,
+  dragRect: null,
+  dragGrabX: 0,
+  dragGrabY: 0,
 
   animationFrame: null,
 
@@ -2651,6 +2654,15 @@ function bindPlayerEvents() {
     }
   );
 
+  // a pointercancel that never resets would leave the progress bar
+  // frozen forever after a canceled touch or stylus grab
+  seek?.addEventListener(
+    "pointercancel",
+    () => {
+      seek.dataset.dragging = "false";
+    }
+  );
+
   seek?.addEventListener(
     "pointerup",
     () => {
@@ -2662,12 +2674,7 @@ function bindPlayerEvents() {
     "change",
     () => {
       seek.dataset.dragging = "false";
-    }
-  );
 
-  seek?.addEventListener(
-    "input",
-    async () => {
       const value = Number(
         seek.value
       );
@@ -2676,7 +2683,7 @@ function bindPlayerEvents() {
         return;
       }
 
-      await seekTo(value);
+      seekTo(value);
     }
   );
 
@@ -2786,7 +2793,9 @@ function bindPlayerEvents() {
 function startDragging(event) {
   if (
     event.button !== 0 ||
-    event.target.closest("button")
+    event.target.closest("button") ||
+    state.fullscreen ||
+    state.hidden
   ) {
     return;
   }
@@ -2800,9 +2809,22 @@ function startDragging(event) {
   event.clientY -
   state.dragOffsetY;
 
-  event.currentTarget.setPointerCapture(
-    event.pointerId
-  );
+  // drag clamping works from the rect at grab time; translate is
+  // relative to the un-translated base, so keep the grab-time values
+  state.dragRect =
+  panel.getBoundingClientRect();
+
+  state.dragGrabX =
+  state.dragOffsetX;
+
+  state.dragGrabY =
+  state.dragOffsetY;
+
+  try {
+    event.currentTarget.setPointerCapture(
+      event.pointerId
+    );
+  } catch (_) {}
 }
 
 function moveDragging(event) {
@@ -2810,16 +2832,49 @@ function moveDragging(event) {
     return;
   }
 
-  state.dragOffsetX =
-  event.clientX -
-  state.dragStartX;
+  // translate is applied on top of the panel's fixed base, and the
+  // grabbed rect already contains the grab-time translate - so clamp
+  // the translate around the rect with a margin kept on screen
+  const rect = state.dragRect;
 
-  state.dragOffsetY =
-  event.clientY -
-  state.dragStartY;
+  if (!rect) {
+    return;
+  }
+
+  const width =
+  rect.width ||
+  panel.offsetWidth ||
+  430;
+
+  const height =
+  rect.height ||
+  panel.offsetHeight ||
+  188;
+
+  const offsetX = clamp(
+    event.clientX - state.dragStartX,
+    state.dragGrabX + 120 - width - rect.left,
+    state.dragGrabX +
+    window.innerWidth -
+    120 -
+    rect.left
+  );
+
+  const offsetY = clamp(
+    event.clientY - state.dragStartY,
+    state.dragGrabY + 60 - height - rect.top,
+    state.dragGrabY +
+    window.innerHeight -
+    60 -
+    rect.top
+  );
+
+  state.dragOffsetX = offsetX;
+
+  state.dragOffsetY = offsetY;
 
   panel.style.translate =
-  `${state.dragOffsetX}px ${state.dragOffsetY}px`;
+  `${offsetX}px ${offsetY}px`;
 }
 
 function stopDragging(event) {
@@ -2956,6 +3011,17 @@ function updatePlaybackUI() {
     ? text("unmute")
     : text("mute");
   }
+
+  // lockscreen and media keys read this; staying silent makes
+  // Windows show the wrong play state
+  if ("mediaSession" in navigator) {
+    try {
+      navigator.mediaSession.playbackState =
+      state.playback.status === "playing"
+      ? "playing"
+      : "paused";
+    } catch (_) {}
+  }
 }
 
 function updateProgressUI() {
@@ -3051,6 +3117,17 @@ function renderInterfaceText() {
     return;
   }
 
+  // labels that depend on live playback state must recompute here so
+  // a language switch actually translates them
+  const audio =
+  getAudioElement();
+
+  const muted =
+  Boolean(audio?.muted || audio?.volume === 0);
+
+  const playing =
+  state.playback.status === "playing";
+
   const mapping = [
     [
       "nuke-mp-detach-button",
@@ -3071,12 +3148,20 @@ function renderInterfaceText() {
       text("previous")
     ],
     [
+      "nuke-mp-play-button",
+      playing
+      ? text("pause")
+      : text("play")
+    ],
+    [
       "nuke-mp-next-button",
       text("next")
     ],
     [
       "nuke-mp-volume-button",
-      text("mute")
+      muted
+      ? text("unmute")
+      : text("mute")
     ],
     [
       "nuke-mp-lyrics-button",
@@ -3145,6 +3230,13 @@ function renderInterfaceText() {
   }
 
   renderInterfaceSource();
+
+  // forget the cached states: updatePlaybackUI rebuilds icon and
+  // labels in the fresh language instead of skipping as unchanged
+  state.ui.playing = null;
+
+  state.ui.muted = null;
+
   updatePlaybackUI();
 }
 
@@ -3219,6 +3311,26 @@ function applyFullscreen() {
     "nuke-mp-queue-fullscreen",
     state.fullscreen
   );
+
+  // a drag offset or a pasted-around position would fight the mode
+  // switch: hand the position back to the class rules every time
+  if (panel) {
+    panel.style.translate = "";
+
+    state.dragging = false;
+
+    state.dragOffsetX = 0;
+
+    state.dragOffsetY = 0;
+  }
+
+  if (queuePanel) {
+    queuePanel.style.left = "";
+
+    queuePanel.style.top = "";
+
+    queuePanel.style.right = "";
+  }
 
   const fullscreen =
   document.getElementById(
@@ -3568,6 +3680,10 @@ function toggleMute() {
       audio.volume =
       state.lastVolume || 0.8;
     }
+
+    // without this the icon keeps saying muted until the next
+    // playback tick, which never comes while paused
+    updatePlaybackUI();
 
     return;
   }
@@ -4231,6 +4347,20 @@ function renderQueueItems(content) {
         async (event) => {
           event.stopPropagation();
 
+          // the row's index was true when it rendered; the queue may
+          // have changed since - look the item up again or the
+          // removeByIndices fallback could delete a different song
+          let index = item?.id
+          ? state.queue.items.findIndex(
+            (queueItem) =>
+            queueItem?.id === item.id
+          )
+          : state.queue.items.indexOf(item);
+
+          if (index < 0) {
+            return;
+          }
+
           try {
             if (
               item?.id &&
@@ -4807,6 +4937,11 @@ function buildQueuePanel() {
     queuePanel.classList.toggle(
       "nuke-mp-queue-fullscreen",
       state.fullscreen
+    );
+
+    makeQueuePanelDraggable(
+      queuePanel,
+      header
     );
 }
 
@@ -5628,15 +5763,19 @@ function detachedWindowHtml() {
     }
   );
 
+  // one seek per drag, not one per pixel: unpaid seeks flood the
+  // host api and that is what made the app feel choppy
   seek.addEventListener(
     "input",
     () => {
       seeking = true;
+    }
+  );
 
-      send(
-        "seek",
-        Number(seek.value)
-      );
+  seek.addEventListener(
+    "pointercancel",
+    () => {
+      seeking = false;
     }
   );
 
@@ -5652,28 +5791,9 @@ function detachedWindowHtml() {
     }
   );
 
-  seek.addEventListener(
-    "blur",
-    () => {
-      seeking = false;
-    }
-  );
-
-  channel?.addEventListener(
-    "message",
-    (event) => {
-      const message =
-      event.data;
-
-      if (
-        message?.type !==
-        "state"
-      ) {
-        return;
-      }
-
-      const data =
-      message.state;
+  // hosts without BroadcastChannel (old webkit) still get updates
+  // through opener.postMessage; route them through the same brain
+  function applyState(data) {
 
       if (
         data.title !==
@@ -5796,6 +5916,23 @@ function detachedWindowHtml() {
         status === "playing"
         ? ICONS.pause
         : ICONS.play;
+      }
+    }
+
+  channel?.addEventListener(
+    "message",
+    (event) => {
+      if (event.data?.type === "state") {
+        applyState(event.data.state);
+      }
+    }
+  );
+
+  window.addEventListener(
+    "message",
+    (event) => {
+      if (event.data?.type === "state") {
+        applyState(event.data.state);
       }
     }
   );
@@ -6043,6 +6180,124 @@ async function requestPictureInPicturePlayer() {
   }
 }
 
+function makeQueuePanelDraggable(
+  root,
+  handle
+) {
+  // the queue panel opens as a fixed overlay next to the player;
+  // grabbing its header moves it out of the way and it stays where
+  // you put it while the app runs. in fullscreen the class rules
+  // dock it to the right edge, so dragging stays off there.
+  let dragging = false;
+
+  let startX = 0;
+  let startY = 0;
+
+  let grabLeft = 0;
+  let grabTop = 0;
+
+  const stop = (event) => {
+    if (!dragging) {
+      return;
+    }
+
+    dragging = false;
+
+    try {
+      handle.releasePointerCapture(
+        event.pointerId
+      );
+    } catch (_) {}
+  };
+
+  handle.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (
+        event.button !== 0 ||
+        state.fullscreen ||
+        event.target.closest("button")
+      ) {
+        return;
+      }
+
+      const rect =
+      root.getBoundingClientRect();
+
+      dragging = true;
+      startX = event.clientX;
+      startY = event.clientY;
+      grabLeft = rect.left;
+      grabTop = rect.top;
+
+      root.style.left =
+      `${rect.left}px`;
+
+      root.style.top =
+      `${rect.top}px`;
+
+      root.style.right =
+      "auto";
+
+      root.style.bottom =
+      "auto";
+
+      try {
+        handle.setPointerCapture(
+          event.pointerId
+        );
+      } catch (_) {}
+    }
+  );
+
+  handle.addEventListener(
+    "pointermove",
+    (event) => {
+      if (!dragging) {
+        return;
+      }
+
+      const width =
+      root.offsetWidth ||
+      390;
+
+      const height =
+      root.offsetHeight ||
+      300;
+
+      root.style.left =
+      `${clamp(
+        grabLeft + event.clientX - startX,
+        -width + 120,
+        Math.max(
+          -width + 120,
+          window.innerWidth - 120
+        )
+      )}px`;
+
+      root.style.top =
+      `${clamp(
+        grabTop + event.clientY - startY,
+        -height + 60,
+        Math.max(
+          -height + 60,
+          window.innerHeight - 60
+        )
+      )}px`;
+    }
+  );
+
+  handle.addEventListener(
+    "pointerup",
+    stop
+  );
+
+  handle.addEventListener(
+    "pointercancel",
+    stop
+  );
+}
+
 function makeDetachedOverlayDraggable(
   root,
   handle
@@ -6101,9 +6356,11 @@ function makeDetachedOverlayDraggable(
       root.style.bottom =
       "auto";
 
-      handle.setPointerCapture(
-        event.pointerId
-      );
+      try {
+        handle.setPointerCapture(
+          event.pointerId
+        );
+      } catch (_) {}
     }
   );
 
@@ -6973,17 +7230,15 @@ center /
 cover
 no-repeat;
 
+/* big blur + will-change is brutal on flatpak (software GL):
+   a modest blur looks the same at this brightness and buys back
+   the frames the panel's repaints were eating */
 filter:
-blur(60px)
+blur(36px)
 brightness(.28)
 saturate(1.2);
 
 opacity: .55;
-
-will-change: transform;
-
-transform:
-scale(1.08);
 }
 
 #nuke-mp-panel.nuke-mp-no-glow::before {

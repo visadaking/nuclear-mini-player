@@ -40,4 +40,24 @@ resizable and draggable interface (it stays where you put it)
 ```
 
 -------------------------------------------------------------
-version 1.8.7 beta as of 22/10/2026
+version 1.8.8 beta as of 01/11/2026
+
+1.8.8 beta - flatpak and windows smoothness pass
+
+- fixed the choppy, laggy feel in flatpak: a smaller blur radius on the
+  ambient glow (the big blur + will-change combo wrecks software GL),
+  and one seek command per drag instead of one per pixel of movement
+- the queue and playlists tab is moveable now: grab its header and
+  place it anywhere, it stays while the app runs (note: in fullscreen
+  it docks to the right edge on purpose)
+- fullscreen keeps its header and footer buttons in every case - any
+  player drag offset is cleared on the mode change, so ui bits can no
+  longer end up offscreen or half missing
+- player can no longer be dragged offscreen
+- music controls: unmute updates its icon right away, language switch
+  translates the play/mute labels too, and removing queue items can
+  no longer hit a stale index after the queue changed
+- detached player works on webviews without BroadcastChannel as well
+  (opener messages), and pointer capture failures no longer kill
+  drags on windows
+- lockscreen shows the right play state (mediasession playbackstate)
