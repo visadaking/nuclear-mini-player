@@ -13,7 +13,8 @@ const SETTINGS_IDS = {
   PREFER_SYNCED: "mp_prefer_synced",
   THEME_SYNC: "mp_theme_sync",
   FONT_SIZE: "mp_font_size",
-  LANGUAGE: "mp_language"
+  LANGUAGE: "mp_language",
+  DETACH_MODE: "mp_detach_mode"
 };
 
 const DEFAULT_SETTINGS = {
@@ -25,8 +26,24 @@ const DEFAULT_SETTINGS = {
   preferSynced: true,
   themeSync: true,
   fontSize: 16,
-  language: "en"
+  language: "en",
+  detachMode: "auto"
 };
+
+const DETACH_MODE_OPTIONS = [
+  {
+    value: "auto",
+    label: "Auto (probe the popup, fall back if it never maps)"
+  },
+  {
+    value: "popup",
+    label: "Always pop out a window (X11/XWayland)"
+  },
+  {
+    value: "overlay",
+    label: "In-app floating panel only (pure Wayland)"
+  }
+];
 
 const LANGUAGE_OPTIONS = [
   {
@@ -312,6 +329,9 @@ const state = {
   playlistsLoading: false,
 
   lyricsOpen: false,
+
+  detachVerdict: "",          // this session's probe result: "popup" when the window mapped, "overlay" when it
+                              // did not and the floating panel took over. Empty until the first detach.
 
   lyrics: {
     raw: "",
@@ -1641,6 +1661,20 @@ async function registerSettings() {
     },
 
     {
+      id: SETTINGS_IDS.DETACH_MODE,
+      title: "Detached player behavior",
+      description:
+      "On Linux Wayland, sandboxed WebKitGTK often fails to map secondary popups. Auto probes the popup and falls back to the floating panel; XWayland users (GDK_BACKEND=x11) may pin \"Always pop out\"; pure Wayland users may pin \"In-app floating panel only\". See the plugin's wayland/README.",
+      category: "Mini Player",
+      kind: "enum",
+      options: DETACH_MODE_OPTIONS,
+      default: "auto",
+        widget: {
+          type: "select"
+        }
+    },
+
+    {
       id: SETTINGS_IDS.LANGUAGE,
       title: "Language",
       description:
@@ -1753,6 +1787,16 @@ async function loadSettings() {
   TEXT[language]
   ? language
   : DEFAULT_SETTINGS.language;
+
+  const detachMode =
+  await getSetting(
+    SETTINGS_IDS.DETACH_MODE,
+    DEFAULT_SETTINGS.detachMode
+  );
+
+  state.settings.detachMode = DETACH_MODE_OPTIONS.some(
+    (option) => option.value === detachMode
+  ) ? detachMode : DEFAULT_SETTINGS.detachMode;
 }
 
 function subscribeSetting(id, callback) {
@@ -6897,6 +6941,56 @@ function openDetachedOverlay() {
   syncDetachedPlayer();
 }
 
+/**
+ * Ask whether a freshly written popup surface is REALLY mapped and visible, briefly. On Wayland, a sandboxed
+ * WebKitGTK popup can carry a live DOM while the compositor never maps its window: document.write succeeds, its
+ * timers run, nothing throws. What never happens is the window becoming visible with a real size, so the probe
+ * watches `document.visibilityState` and the viewport from the host side until the deadline runs out.
+ */
+function probeDetachedSurface(target) {
+  const deadline = Date.now() + 700;
+
+  return new Promise((resolve) => {
+    const check = () => {
+      let visible = false;
+
+      try {
+        visible = target.document.visibilityState === "visible" &&
+        target.innerWidth > 0 &&
+        target.innerHeight > 0;
+      } catch (error) {
+        resolve(false);
+
+        return;
+      }
+
+      if (visible) {
+        resolve(true);
+
+        return;
+      }
+
+      if (Date.now() >= deadline) {
+        resolve(false);
+
+        return;
+      }
+
+      setTimeout(check, 120);
+    };
+
+    setTimeout(check, 60);
+  });
+}
+
+/**
+ * Open the detached player surface for this session's environment.
+ * - "popup": only window.open, no probe, no fallback (what X11/XWayland users already have).
+ * - "overlay": never window.open, straight to the floating panel (what pure Wayland users want).
+ * - "auto" (default): try window.open, then the probe; a popup that never mapped is closed at once and the
+ *   floating panel follows. The first verdict is remembered in `state.detachVerdict`, so one broken popup probe
+ *   teaches the session, and later detaches skip the broken path entirely.
+ */
 async function openDetachedPlayer() {
   if (isDetachedPlayerOpen()) {
     try {
@@ -6905,6 +6999,55 @@ async function openDetachedPlayer() {
     } catch (_) {}
 
     syncDetachedPlayer();
+
+    return;
+  }
+
+  const mode = state.settings.detachMode || DEFAULT_SETTINGS.detachMode;
+
+  if (
+    mode === "popup" ||
+    state.detachVerdict === "popup"
+  ) {
+    let directWindow = null;
+
+    try {
+      directWindow = window.open(
+        "",
+        "nuclear-mini-player",
+        "popup=yes,width=430,height=230,resizable=yes,menubar=no,toolbar=no,location=no,status=no,scrollbars=no"
+      );
+    } catch (error) {
+      log(
+        "detach was refused by the host",
+        error
+      );
+
+      state.detachVerdict = "overlay";
+
+      openDetachedOverlay();
+
+      return;
+    }
+
+    if (directWindow) {
+      state.detachVerdict = state.detachVerdict || "popup";
+      state.detachedWindow = directWindow;
+
+      attachDetachedSurface(directWindow);
+
+      return;
+    }
+
+    state.detachVerdict = "overlay";
+
+    openDetachedOverlay();
+
+    return;
+  }
+
+  if (mode === "overlay" || state.detachVerdict === "overlay") {
+    openDetachedOverlay();
 
     return;
   }
@@ -6926,19 +7069,18 @@ async function openDetachedPlayer() {
   }
 
   if (detachedWindow) {
-    state.detachedWindow =
-    detachedWindow;
+    state.detachedWindow = detachedWindow;
 
-    if (
-      attachDetachedSurface(
-        detachedWindow
-      )
-    ) {
+    const rendered = attachDetachedSurface(detachedWindow);
+
+    if (rendered && await probeDetachedSurface(detachedWindow)) {
+      state.detachVerdict = "popup";
+
       return;
     }
 
-    state.detachedWindow =
-    null;
+    state.detachVerdict = "overlay";
+    state.detachedWindow = null;
 
     try {
       detachedWindow.close();
@@ -6949,8 +7091,7 @@ async function openDetachedPlayer() {
   await requestPictureInPicturePlayer();
 
   if (pipWindow) {
-    state.detachedPip =
-    pipWindow;
+    state.detachedPip = pipWindow;
 
     if (
       attachDetachedSurface(
@@ -6972,6 +7113,10 @@ async function openDetachedPlayer() {
   // picture-in-picture. Fall back to a floating in-app window so the
   // detach button always does something useful.
   openDetachedOverlay();
+
+  if (!state.detachVerdict) {
+    state.detachVerdict = "overlay";
+  }
 }
 
 function closeDetachedPlayer() {
