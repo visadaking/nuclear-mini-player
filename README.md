@@ -4,6 +4,14 @@ Nuclear Lyrics? goodbye, it is time to welcome Nuclear Mini Player.
 
 it is a small floating player for Nuclear, and now it can pop out of the app entirely with the detached player.
 
+### experimental branch (wayland)
+
+this branch (experiment/nuclear-mini-wayland) is about the detached player on linux wayland, where
+webkitgtk inside the flatpak often never maps the popup window and always fails silently. here the plugin
+probes the popup once, falls back to the in-app floating panel, remembers the verdict for the session, and
+ships honest tooling in [wayland/README.md](wayland/README.md) - the flatpak xwayland override, the kwin
+keep-above rule, and the gnome note. try it before the next stable release.
+
 
 Nuclear Mini Player features - 
 
