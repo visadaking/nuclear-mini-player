@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.8.7
+ * Nuclear Mini Player v1.9.0
  */
 
 // settings
@@ -354,6 +354,7 @@ const state = {
   detachedPip: null,
   detachedOverlay: null,
   detachedChannel: null,
+  detachedMessageHandler: null,
 
   cleanup: [],
 
@@ -3131,7 +3132,9 @@ function renderInterfaceText() {
   const mapping = [
     [
       "nuke-mp-detach-button",
-      text("detach")
+      isDetachedPlayerOpen()
+      ? text("attach")
+      : text("detach")
     ],
     [
       "nuke-mp-fullscreen-button",
@@ -5705,11 +5708,22 @@ function detachedWindowHtml() {
   }
 
   function send(action, value) {
-    channel?.postMessage({
+    const message = {
       type: "command",
       action,
       value
-    });
+    };
+
+    try {
+      channel?.postMessage(message);
+    } catch (_) {}
+
+    // fallback for hosts without BroadcastChannel support
+    try {
+      if (window.opener) {
+        window.opener.postMessage(message, "*");
+      }
+    } catch (_) {}
   }
 
   document.getElementById(
@@ -6001,6 +6015,22 @@ function syncDetachedPlayer() {
     );
   }
 
+  const detachButton =
+  document.getElementById(
+    "nuke-mp-detach-button"
+  );
+
+  if (detachButton) {
+    const label = isDetachedPlayerOpen()
+    ? text("attach")
+    : text("detach");
+
+    if (detachButton.getAttribute("aria-label") !== label) {
+      detachButton.setAttribute("aria-label", label);
+      detachButton.title = label;
+    }
+  }
+
   if (!popup && !pip) {
     return;
   }
@@ -6039,6 +6069,21 @@ function isDetachedPlayerOpen() {
     !state.detachedPip.closed) ||
     (state.detachedOverlay &&
     state.detachedOverlay.isConnected)
+  );
+}
+
+function isKnownDetachedSource(source) {
+  if (!source) {
+    return false;
+  }
+
+  return (
+    (state.detachedWindow &&
+    !state.detachedWindow.closed &&
+    source === state.detachedWindow) ||
+    (state.detachedPip &&
+    !state.detachedPip.closed &&
+    source === state.detachedPip)
   );
 }
 
@@ -6087,7 +6132,24 @@ async function handleDetachedCommand(
   }
 }
 
-function ensureDetachedChannel() {
+function handleDetachedWindowMessage(event) {
+  if (!isKnownDetachedSource(event.source)) {
+    return;
+  }
+
+  void handleDetachedCommand(event);
+}
+
+function ensureDetachedBridge() {
+  if (!state.detachedMessageHandler) {
+    state.detachedMessageHandler = handleDetachedWindowMessage;
+
+    window.addEventListener(
+      "message",
+      state.detachedMessageHandler
+    );
+  }
+
   if (!("BroadcastChannel" in window)) {
     return null;
   }
@@ -6125,7 +6187,7 @@ function attachDetachedSurface(
     return false;
   }
 
-  ensureDetachedChannel();
+  ensureDetachedBridge();
 
   try {
     target.addEventListener(
@@ -7020,6 +7082,17 @@ function closeDetachedPlayer() {
 
     state.detachedChannel =
     null;
+  }
+
+  if (state.detachedMessageHandler) {
+    try {
+      window.removeEventListener(
+        "message",
+        state.detachedMessageHandler
+      );
+    } catch (_) {}
+
+    state.detachedMessageHandler = null;
   }
 }
 
