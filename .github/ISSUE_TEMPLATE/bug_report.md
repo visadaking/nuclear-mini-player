@@ -25,5 +25,3 @@ title: "[bug] "
 ## Example track (artist, title that triggers it, if any)
 
 ---
-
-**note:** before filing, please read `AGENTS.md` in this repo - it's there for a reason.
