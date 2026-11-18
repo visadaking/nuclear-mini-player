@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.9.0
+ * Nuclear Mini Player v1.9.1
  */
 
 // settings
@@ -6041,17 +6041,21 @@ function syncDetachedPlayer() {
   };
 
   try {
-    popup?.postMessage(
-      message,
-      "*"
-    );
+    if (popup && !popup.closed) {
+      popup.postMessage(
+        message,
+        "*"
+      );
+    }
   } catch (_) {}
 
   try {
-    pip?.postMessage(
-      message,
-      "*"
-    );
+    if (pip && !pip.closed) {
+      pip.postMessage(
+        message,
+        "*"
+      );
+    }
   } catch (_) {}
 
   try {
@@ -6209,6 +6213,7 @@ function attachDetachedSurface(
           null;
         }
 
+        // update UI label/state without messaging a closing surface
         syncDetachedPlayer();
       }
     );
@@ -7037,36 +7042,11 @@ async function openDetachedPlayer() {
 }
 
 function closeDetachedPlayer() {
-  try {
-    if (
-      state.detachedWindow &&
-      !state.detachedWindow.closed
-    ) {
-      state.detachedWindow.close();
-    }
-  } catch (_) {}
+  const popup = state.detachedWindow;
+  const pip = state.detachedPip;
 
-  try {
-    if (
-      state.detachedPip &&
-      !state.detachedPip.closed
-    ) {
-      state.detachedPip.close();
-    }
-  } catch (_) {}
-
-  if (state.detachedOverlay) {
-    state.detachedOverlay.remove();
-
-    state.detachedOverlay =
-    null;
-  }
-
-  state.detachedWindow =
-  null;
-
-  state.detachedPip =
-  null;
+  state.detachedWindow = null;
+  state.detachedPip = null;
 
   if (state.detachedChannel) {
     try {
@@ -7080,8 +7060,7 @@ function closeDetachedPlayer() {
       state.detachedChannel.close();
     } catch (_) {}
 
-    state.detachedChannel =
-    null;
+    state.detachedChannel = null;
   }
 
   if (state.detachedMessageHandler) {
@@ -7094,6 +7073,29 @@ function closeDetachedPlayer() {
 
     state.detachedMessageHandler = null;
   }
+
+  if (state.detachedOverlay) {
+    try {
+      state.detachedOverlay.remove();
+    } catch (_) {}
+
+    state.detachedOverlay = null;
+  }
+
+  try {
+    if (popup && !popup.closed) {
+      popup.close();
+    }
+  } catch (_) {}
+
+  try {
+    if (pip && !pip.closed) {
+      pip.close();
+    }
+  } catch (_) {}
+
+  // refresh detach button/UI state without targeting closed surfaces
+  syncDetachedPlayer();
 }
 
 function toggleDetachedPlayer() {

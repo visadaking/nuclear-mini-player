@@ -58,6 +58,11 @@ The implementation aims to degrade gracefully on older or partially capable host
 
 ## Changelog
 
+### 1.9.1 - 2026-11-18
+
+- **Detached player crash hardening:** tightened popup/PiP teardown and state sync to avoid messaging or operating on closing windows, and made detached bridge cleanup more defensive to reduce WebKit instability in Flatpak/Tauri environments.
+- **Validation:** `node --check index.js` passes.
+
 ### 1.9.0 - 2026-11-18
 
 - **Version & packaging:** bumped release/version metadata to `1.9.0` and refreshed plugin documentation/notes.
