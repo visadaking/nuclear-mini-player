@@ -867,7 +867,7 @@ function updateBackgroundArtwork() {
   ) {
     panel.style.setProperty(
       "--nuke-mp-cover",
-      `url("${state.artwork.url.replaceAll('"', '\\"')}")`
+      `url(${JSON.stringify(state.artwork.url)})`
     );
   } else {
     panel.style.removeProperty("--nuke-mp-cover");
@@ -886,7 +886,7 @@ function updateBackgroundArtwork() {
     state.artwork.url
   ) {
     artwork.style.backgroundImage =
-    `url("${state.artwork.url.replaceAll('"', '\\"')}")`;
+    `url(${JSON.stringify(state.artwork.url)})`;
   } else {
     artwork.style.backgroundImage = "none";
   }
@@ -2004,6 +2004,16 @@ const ICONS = {
   <path d="M14 5h5v5"/>
   <path d="m19 5-7 7"/>
   <path d="M19 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>
+  </svg>
+  `,
+
+  attach: `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M10 14 3 21"/>
+  <path d="M3 16v5h5"/>
+  <path d="M14 3h7v7"/>
+  <path d="M21 10V4a1 1 0 0 0-1-1h-6"/>
+  <path d="M10 21H4a1 1 0 0 1-1-1v-6"/>
   </svg>
   `,
 
@@ -3210,6 +3220,13 @@ function renderInterfaceText() {
     );
 
     element.title = label;
+  }
+
+  const detachButton = document.getElementById("nuke-mp-detach-button");
+  if (detachButton) {
+    const detachedOpen = isDetachedPlayerOpen();
+    detachButton.setAttribute("aria-pressed", detachedOpen ? "true" : "false");
+    detachButton.innerHTML = detachedOpen ? ICONS.attach : ICONS.detach;
   }
 
   const mode =
