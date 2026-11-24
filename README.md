@@ -40,9 +40,9 @@ resizable and draggable interface (it stays where you put it)
 ```
 
 -------------------------------------------------------------
-version 1.9.1 as of 18/11/2026
+version 1.9.2 as of 24/11/2026
 
-1.9.1 - detached player crash fix
+1.9.2 - fullscreen queue performance fixes, chunked playlist rendering, queue rerender coalescing/scroll preservation
 
 - hardened detached popup/PiP teardown and state sync to avoid messaging or
   interacting with closing windows/contexts (fixes WebKit crashes seen in

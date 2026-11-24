@@ -1,6 +1,6 @@
 {
   "name": "nuclear-mini-player",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "description": "A floating and detachable mini player for Nuclear with synced lyrics, queue and playlist access, theme sync, and resilient host-API integration.",
   "author": "visa",
   "main": "index.js",

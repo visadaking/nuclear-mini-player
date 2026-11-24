@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.9.1
+ * Nuclear Mini Player v1.9.2
  */
 
 // settings
