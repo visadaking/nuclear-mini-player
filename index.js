@@ -4809,15 +4809,43 @@ function renderPlaylistDetails(
     "nuke-mp-list"
   );
 
-  items.forEach(
-    (item, index) => {
+  content.appendChild(list);
+
+  content._nukeMpCancelQueueRender?.();
+
+  const CHUNK_SIZE = 50;
+  let rendered = 0;
+  let cancelled = false;
+  let scrollHandler = null;
+
+  content._nukeMpCancelQueueRender = () => {
+    cancelled = true;
+    if (scrollHandler) {
+      content.removeEventListener("scroll", scrollHandler);
+      scrollHandler = null;
+    }
+  };
+
+  const renderChunk = () => {
+    if (cancelled || !content.isConnected) {
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    const limit = Math.min(
+      rendered + CHUNK_SIZE,
+      items.length
+    );
+
+    for (let index = rendered; index < limit; index += 1) {
+      const item = items[index];
       const track =
       normalizeTrack(
         item?.track || item
       );
 
       if (!track) {
-        return;
+        continue;
       }
 
       const button =
@@ -4829,69 +4857,104 @@ function renderPlaylistDetails(
       button.type =
       "button";
 
-    const thumb =
-    createTrackThumb(
-      track,
-      index
-    );
+      const thumb =
+      createTrackThumb(
+        track,
+        index
+      );
 
-    const info =
-    createElement(
-      "span",
-      "nuke-mp-list-info"
-    );
+      const info =
+      createElement(
+        "span",
+        "nuke-mp-list-info"
+      );
 
-    const title =
-    createElement(
-      "span",
-      "nuke-mp-list-title",
-      track.displayTitle
-    );
+      const title =
+      createElement(
+        "span",
+        "nuke-mp-list-title",
+        track.displayTitle
+      );
 
-    const artist =
-    createElement(
-      "span",
-      "nuke-mp-list-artist",
-      track.displayArtist
-    );
+      const artist =
+      createElement(
+        "span",
+        "nuke-mp-list-artist",
+        track.displayArtist
+      );
 
-    info.append(
-      title,
-      artist
-    );
+      info.append(
+        title,
+        artist
+      );
 
-    button.append(
-      thumb,
-      info
-    );
+      button.append(
+        thumb,
+        info
+      );
 
-    button.addEventListener(
-      "click",
-      async () => {
-        try {
-          await api.Queue.addNext(
-            [track.raw]
-          );
+      button.addEventListener(
+        "click",
+        async () => {
+          try {
+            await api.Queue.addNext(
+              [track.raw]
+            );
 
-          showToast(
-            text("added")
-          );
-        } catch (error) {
-          log(
-            "playlist add failed",
-            error
-          );
+            showToast(
+              text("added")
+            );
+          } catch (error) {
+            log(
+              "playlist add failed",
+              error
+            );
+          }
         }
-      }
-    );
+      );
 
-    list.appendChild(
-      button
-    );
+      fragment.appendChild(button);
     }
-  );
 
-  content.appendChild(list);
+    list.appendChild(fragment);
+    rendered = limit;
+
+    if (rendered < items.length) {
+      scheduleNextChunk();
+    }
+  };
+
+  const scheduleNextChunk = () => {
+    const remaining = items.length - rendered;
+    const nearBottom =
+      content.scrollTop + content.clientHeight >= content.scrollHeight - 240;
+
+    if (nearBottom || remaining <= CHUNK_SIZE) {
+      requestAnimationFrame(renderChunk);
+      return;
+    }
+
+    scrollHandler = () => {
+      if (cancelled || !content.isConnected) {
+        content.removeEventListener("scroll", scrollHandler);
+        scrollHandler = null;
+        return;
+      }
+
+      if (
+        content.scrollTop + content.clientHeight >=
+        content.scrollHeight - 240
+      ) {
+        content.removeEventListener("scroll", scrollHandler);
+        scrollHandler = null;
+        requestAnimationFrame(renderChunk);
+      }
+    };
+
+    content.addEventListener("scroll", scrollHandler, { passive: true });
+  };
+
+  requestAnimationFrame(renderChunk);
 }
 
 function buildQueuePanel() {
