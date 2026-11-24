@@ -4262,157 +4262,155 @@ function renderQueueItems(content) {
     "nuke-mp-list"
   );
 
-  state.queue.items.forEach(
-    (item, index) => {
-      const track =
-      normalizeTrack(
-        item.track
-      );
+  const renderRow = (item, index) => {
+    const track =
+    normalizeTrack(
+      item.track
+    );
 
-      if (!track) {
-        return;
-      }
-
-      const row = createElement(
-        "div",
-        "nuke-mp-queue-row"
-      );
-
-      const main = createElement(
-        "button",
-        "nuke-mp-queue-main"
-      );
-
-      main.type = "button";
-
-      const thumb = createTrackThumb(
-        track,
-        index
-      );
-
-      const info = createElement(
-        "span",
-        "nuke-mp-list-info"
-      );
-
-      const title = createElement(
-        "span",
-        "nuke-mp-list-title",
-        track.displayTitle
-      );
-
-      const artist = createElement(
-        "span",
-        "nuke-mp-list-artist",
-        track.displayArtist
-      );
-
-      info.append(
-        title,
-        artist
-      );
-
-      if (
-        index ===
-        state.queue.currentIndex
-      ) {
-        row.classList.add(
-          "current"
-        );
-
-        const current =
-        createElement(
-          "span",
-          "nuke-mp-current-badge",
-          text("current")
-        );
-
-        info.appendChild(
-          current
-        );
-      }
-
-      main.append(
-        thumb,
-        info
-      );
-
-      main.addEventListener(
-        "click",
-        async () => {
-          try {
-            await api.Queue.goToIndex(
-              index
-            );
-
-            closeQueue();
-          } catch (error) {
-            log(
-              "queue navigation failed",
-              error
-            );
-          }
-        }
-      );
-
-      const remove =
-      createButton(
-        "nuke-mp-remove-button",
-        text("remove"),
-                   ICONS.remove
-      );
-
-      remove.addEventListener(
-        "click",
-        async (event) => {
-          event.stopPropagation();
-
-          // the row's index was true when it rendered; the queue may
-          // have changed since - look the item up again or the
-          // removeByIndices fallback could delete a different song
-          let index = item?.id
-          ? state.queue.items.findIndex(
-            (queueItem) =>
-            queueItem?.id === item.id
-          )
-          : state.queue.items.indexOf(item);
-
-          if (index < 0) {
-            return;
-          }
-
-          try {
-            if (
-              item?.id &&
-              api.Queue.removeByIds
-            ) {
-              await api.Queue.removeByIds(
-                [item.id]
-              );
-            } else if (
-              api.Queue.removeByIndices
-            ) {
-              await api.Queue.removeByIndices(
-                [index]
-              );
-            }
-          } catch (error) {
-            log(
-              "queue removal failed",
-              error
-            );
-          }
-        }
-      );
-
-      row.append(
-        main,
-        remove
-      );
-
-      list.appendChild(row);
+    if (!track) {
+      return null;
     }
-  );
+
+    const row = createElement(
+      "div",
+      "nuke-mp-queue-row"
+    );
+
+    const main = createElement(
+      "button",
+      "nuke-mp-queue-main"
+    );
+
+    main.type = "button";
+
+    const thumb = createTrackThumb(
+      track,
+      index
+    );
+
+    const info = createElement(
+      "span",
+      "nuke-mp-list-info"
+    );
+
+    const title = createElement(
+      "span",
+      "nuke-mp-list-title",
+      track.displayTitle
+    );
+
+    const artist = createElement(
+      "span",
+      "nuke-mp-list-artist",
+      track.displayArtist
+    );
+
+    info.append(
+      title,
+      artist
+    );
+
+    if (
+      index ===
+      state.queue.currentIndex
+    ) {
+      row.classList.add(
+        "current"
+      );
+
+      const current =
+      createElement(
+        "span",
+        "nuke-mp-current-badge",
+        text("current")
+      );
+
+      info.appendChild(
+        current
+      );
+    }
+
+    main.append(
+      thumb,
+      info
+    );
+
+    main.addEventListener(
+      "click",
+      async () => {
+        try {
+          await api.Queue.goToIndex(
+            index
+          );
+
+          closeQueue();
+        } catch (error) {
+          log(
+            "queue navigation failed",
+            error
+          );
+        }
+      }
+    );
+
+    const remove =
+    createButton(
+      "nuke-mp-remove-button",
+      text("remove"),
+                 ICONS.remove
+    );
+
+    remove.addEventListener(
+      "click",
+      async (event) => {
+        event.stopPropagation();
+
+        // the row's index was true when it rendered; the queue may
+        // have changed since - look the item up again or the
+        // removeByIndices fallback could delete a different song
+        let currentIndex = item?.id
+        ? state.queue.items.findIndex(
+          (queueItem) =>
+          queueItem?.id === item.id
+        )
+        : state.queue.items.indexOf(item);
+
+        if (currentIndex < 0) {
+          return;
+        }
+
+        try {
+          if (
+            item?.id &&
+            api.Queue.removeByIds
+          ) {
+            await api.Queue.removeByIds(
+              [item.id]
+            );
+          } else if (
+            api.Queue.removeByIndices
+          ) {
+            await api.Queue.removeByIndices(
+              [currentIndex]
+            );
+          }
+        } catch (error) {
+          log(
+            "queue removal failed",
+            error
+          );
+        }
+      }
+    );
+
+    row.append(
+      main,
+      remove
+    );
+
+    return row;
+  };
 
   content.appendChild(list);
 
@@ -4445,6 +4443,85 @@ function renderQueueItems(content) {
 
   footer.appendChild(clear);
   content.appendChild(footer);
+
+  // Render queue rows in chunks to avoid freezing the UI on large queues,
+  // especially when opening the queue panel in fullscreen.
+  content._nukeMpCancelQueueRender?.();
+
+  const CHUNK_SIZE = 50;
+  let rendered = 0;
+  let cancelled = false;
+  let scrollHandler = null;
+
+  content._nukeMpCancelQueueRender = () => {
+    cancelled = true;
+    if (scrollHandler) {
+      content.removeEventListener("scroll", scrollHandler);
+      scrollHandler = null;
+    }
+  };
+
+  const renderChunk = () => {
+    if (cancelled || !content.isConnected) {
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    const limit = Math.min(
+      rendered + CHUNK_SIZE,
+      state.queue.items.length
+    );
+
+    for (let index = rendered; index < limit; index += 1) {
+      const row = renderRow(
+        state.queue.items[index],
+        index
+      );
+
+      if (row) {
+        fragment.appendChild(row);
+      }
+    }
+
+    list.appendChild(fragment);
+    rendered = limit;
+
+    if (rendered < state.queue.items.length) {
+      scheduleNextChunk();
+    }
+  };
+
+  const scheduleNextChunk = () => {
+    const remaining = state.queue.items.length - rendered;
+    const nearBottom =
+      content.scrollTop + content.clientHeight >= content.scrollHeight - 240;
+
+    if (nearBottom || remaining <= CHUNK_SIZE) {
+      requestAnimationFrame(renderChunk);
+      return;
+    }
+
+    scrollHandler = () => {
+      if (cancelled || !content.isConnected) {
+        content.removeEventListener("scroll", scrollHandler);
+        scrollHandler = null;
+        return;
+      }
+
+      if (
+        content.scrollTop + content.clientHeight >=
+        content.scrollHeight - 240
+      ) {
+        content.removeEventListener("scroll", scrollHandler);
+        scrollHandler = null;
+        requestAnimationFrame(renderChunk);
+      }
+    };
+
+    content.addEventListener("scroll", scrollHandler, { passive: true });
+  };
+
+  requestAnimationFrame(renderChunk);
 }
 
 function renderQueueEmpty(
