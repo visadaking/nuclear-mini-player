@@ -50,11 +50,3 @@ version 1.9.2 as of 24/11/2026
 - made detached bridge cleanup and close flow more defensive
 - kept host-tolerant Nuclear API usage and detached fallbacks
   (popup -> Picture-in-Picture -> in-app floating panel)
-
-1.9.0 - improvements and cleanup
-
-- improved detached player compatibility for hosts without BroadcastChannel
-  (commands also work via opener window messages)
-- detach button now reflects whether the detached player is open
-- bumped plugin metadata/docs to 1.9.0 and cleaned up notes/README
-- validated with `node --check index.js`
