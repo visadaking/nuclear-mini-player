@@ -4130,6 +4130,20 @@ function normalizeQueue(queue) {
   };
 }
 
+let queuePanelRenderQueued = false;
+
+function scheduleQueuePanelRender() {
+  if (queuePanelRenderQueued) {
+    return;
+  }
+
+  queuePanelRenderQueued = true;
+  requestAnimationFrame(() => {
+    queuePanelRenderQueued = false;
+    renderQueuePanel();
+  });
+}
+
 function renderQueuePanel() {
   if (!queuePanel) {
     return;
@@ -4185,6 +4199,23 @@ function renderQueuePanel() {
     return;
   }
 
+  const nextView =
+  state.queueView === "playlists"
+  ? (
+    state.selectedPlaylist
+    ? `playlist:${state.selectedPlaylist.id || state.selectedPlaylist.name || "detail"}`
+    : "playlists"
+  )
+  : "queue";
+
+  const previousView = content.dataset.view || "";
+  const savedScrollTop =
+  previousView === nextView
+  ? content.scrollTop
+  : 0;
+  content.dataset.view = nextView;
+  content._nukeMpRestoreScrollTop = savedScrollTop > 0 ? savedScrollTop : 0;
+
   if (
     state.queueView === "playlists"
   ) {
@@ -4197,11 +4228,19 @@ function renderQueuePanel() {
         content
       );
     }
-
-    return;
+  } else {
+    renderQueueItems(content);
   }
 
-  renderQueueItems(content);
+  if (previousView === nextView && savedScrollTop > 0) {
+    requestAnimationFrame(() => {
+      if (content.dataset.view === nextView && content._nukeMpRestoreScrollTop) {
+        const maxScroll = Math.max(0, content.scrollHeight - content.clientHeight);
+        content.scrollTop = Math.min(savedScrollTop, maxScroll);
+        content._nukeMpRestoreScrollTop = 0;
+      }
+    });
+  }
 }
 
 function createTrackThumb(track, index) {
@@ -4485,6 +4524,18 @@ function renderQueueItems(content) {
 
     list.appendChild(fragment);
     rendered = limit;
+
+    const restoreTop = Number(content._nukeMpRestoreScrollTop) || 0;
+    if (restoreTop > 0) {
+      const maxScroll = Math.max(0, content.scrollHeight - content.clientHeight);
+      if (maxScroll >= restoreTop || rendered >= state.queue.items.length) {
+        content.scrollTop = Math.min(restoreTop, maxScroll);
+        content._nukeMpRestoreScrollTop = 0;
+      } else {
+        requestAnimationFrame(renderChunk);
+        return;
+      }
+    }
 
     if (rendered < state.queue.items.length) {
       scheduleNextChunk();
@@ -4919,6 +4970,18 @@ function renderPlaylistDetails(
     list.appendChild(fragment);
     rendered = limit;
 
+    const restoreTop = Number(content._nukeMpRestoreScrollTop) || 0;
+    if (restoreTop > 0) {
+      const maxScroll = Math.max(0, content.scrollHeight - content.clientHeight);
+      if (maxScroll >= restoreTop || rendered >= items.length) {
+        content.scrollTop = Math.min(restoreTop, maxScroll);
+        content._nukeMpRestoreScrollTop = 0;
+      } else {
+        requestAnimationFrame(renderChunk);
+        return;
+      }
+    }
+
     if (rendered < items.length) {
       scheduleNextChunk();
     }
@@ -5234,7 +5297,7 @@ function handleQueueState(
     }
   }
 
-  renderQueuePanel();
+  scheduleQueuePanelRender();
 }
 
 async function handleCurrentItem(
