@@ -26,6 +26,8 @@ playlist browsing with playlist details and add-to-queue
 
 detached player window (pop the player out of Nuclear, falls back to a floating panel when your system blocks popups)
 
+Nuclear Mobile handoff (send the current queue/track to a Nuclear Mobile peer over P2P)
+
 smooth Wayland-optimized dragging logic 
 
 auto-hides the miniplayer when system menus or preferences are open to prevent overlap
@@ -40,7 +42,9 @@ resizable and draggable interface (it stays where you put it)
 ```
 
 -------------------------------------------------------------
-version 1.9.2 as of 24/11/2026
+version 1.9.3 as of 28/11/2026
+
+1.9.3 - Nuclear Mobile handoff support, settings for P2P peer/PIN, and release/audit fixes
 
 1.9.2 - fullscreen queue performance fixes, chunked playlist rendering, queue rerender coalescing/scroll preservation
 

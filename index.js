@@ -1,5 +1,5 @@
 /*
- * Nuclear Mini Player v1.9.2
+ * Nuclear Mini Player v1.9.3
  */
 
 // settings
@@ -13,7 +13,9 @@ const SETTINGS_IDS = {
   PREFER_SYNCED: "mp_prefer_synced",
   THEME_SYNC: "mp_theme_sync",
   FONT_SIZE: "mp_font_size",
-  LANGUAGE: "mp_language"
+  LANGUAGE: "mp_language",
+  NUCLEAR_MOBILE_PEER: "mp_nuclear_mobile_peer",
+  NUCLEAR_MOBILE_PIN: "mp_nuclear_mobile_pin"
 };
 
 const DEFAULT_SETTINGS = {
@@ -25,7 +27,9 @@ const DEFAULT_SETTINGS = {
   preferSynced: true,
   themeSync: true,
   fontSize: 16,
-  language: "en"
+  language: "en",
+  nuclearMobilePeer: "",
+  nuclearMobilePin: "424242"
 };
 
 const LANGUAGE_OPTIONS = [
@@ -92,7 +96,12 @@ const TEXT = {
     unknownTrack: "Unknown Track",
     nothingPlaying: "Nothing playing",
     pickTrack: "Pick a song in Nuclear",
-    popupBlocked: "The detached window was blocked."
+    popupBlocked: "The detached window was blocked.",
+    sendToMobile: "Send to Nuclear Mobile",
+    handoffSent: "Sent to Nuclear Mobile",
+    handoffFailed: "Nuclear Mobile handoff failed",
+    handoffNoPeer: "Set Nuclear Mobile peer in settings",
+    handoffNoTrack: "Play a track before handing off"
   },
 
   es: {
@@ -135,7 +144,12 @@ const TEXT = {
     unknownTrack: "Canción desconocida",
     nothingPlaying: "Nada en reproducción",
     pickTrack: "Elige una canción en Nuclear",
-    popupBlocked: "La ventana separada fue bloqueada."
+    popupBlocked: "La ventana separada fue bloqueada.",
+    sendToMobile: "Enviar a Nuclear Mobile",
+    handoffSent: "Enviado a Nuclear Mobile",
+    handoffFailed: "Falló el envío a Nuclear Mobile",
+    handoffNoPeer: "Configura el peer de Nuclear Mobile en ajustes",
+    handoffNoTrack: "Reproduce una pista antes de enviar"
   },
 
   fr: {
@@ -178,7 +192,12 @@ const TEXT = {
     unknownTrack: "Titre inconnu",
     nothingPlaying: "Rien en lecture",
     pickTrack: "Choisissez une chanson dans Nuclear",
-    popupBlocked: "La fenêtre séparée a été bloquée."
+    popupBlocked: "La fenêtre séparée a été bloquée.",
+    sendToMobile: "Envoyer vers Nuclear Mobile",
+    handoffSent: "Envoyé vers Nuclear Mobile",
+    handoffFailed: "Échec de l'envoi vers Nuclear Mobile",
+    handoffNoPeer: "Définissez le pair Nuclear Mobile dans les réglages",
+    handoffNoTrack: "Lancez un morceau avant l'envoi"
   },
 
   ru: {
@@ -221,7 +240,12 @@ const TEXT = {
     unknownTrack: "Неизвестный трек",
     nothingPlaying: "Ничего не воспроизводится",
     pickTrack: "Выберите песню в Nuclear",
-    popupBlocked: "Отдельное окно было заблокировано."
+    popupBlocked: "Отдельное окно было заблокировано.",
+    sendToMobile: "Отправить в Nuclear Mobile",
+    handoffSent: "Отправлено в Nuclear Mobile",
+    handoffFailed: "Не удалось отправить в Nuclear Mobile",
+    handoffNoPeer: "Укажите peer Nuclear Mobile в настройках",
+    handoffNoTrack: "Воспроизведите трек перед отправкой"
   },
 
   ro: {
@@ -264,7 +288,12 @@ const TEXT = {
     unknownTrack: "Melodie necunoscută",
     nothingPlaying: "Nimic nu rulează",
     pickTrack: "Alege o melodie în Nuclear",
-    popupBlocked: "Fereastra separată a fost blocată."
+    popupBlocked: "Fereastra separată a fost blocată.",
+    sendToMobile: "Trimite către Nuclear Mobile",
+    handoffSent: "Trimis către Nuclear Mobile",
+    handoffFailed: "Trimiterea către Nuclear Mobile a eșuat",
+    handoffNoPeer: "Setează peer-ul Nuclear Mobile în setări",
+    handoffNoTrack: "Redă o piesă înainte de trimitere"
   }
 };
 
@@ -1653,6 +1682,32 @@ async function registerSettings() {
         widget: {
           type: "select"
         }
+    },
+
+    {
+      id: SETTINGS_IDS.NUCLEAR_MOBILE_PEER,
+      title: "Nuclear Mobile peer",
+      description:
+      "Nuclear Mobile P2P address (host:port) for handoff.",
+      category: "Mini Player",
+      kind: "string",
+      default: "",
+        widget: {
+          type: "text"
+        }
+    },
+
+    {
+      id: SETTINGS_IDS.NUCLEAR_MOBILE_PIN,
+      title: "Nuclear Mobile PIN",
+      description:
+      "PIN for Nuclear Mobile P2P handoff/remote control.",
+      category: "Mini Player",
+      kind: "string",
+      default: "424242",
+        widget: {
+          type: "text"
+        }
     }
   ]);
 }
@@ -1754,6 +1809,22 @@ async function loadSettings() {
   TEXT[language]
   ? language
   : DEFAULT_SETTINGS.language;
+
+  state.settings.nuclearMobilePeer =
+  String(
+    await getSetting(
+      SETTINGS_IDS.NUCLEAR_MOBILE_PEER,
+      DEFAULT_SETTINGS.nuclearMobilePeer
+    ) || ""
+  ).trim();
+
+  state.settings.nuclearMobilePin =
+  String(
+    await getSetting(
+      SETTINGS_IDS.NUCLEAR_MOBILE_PIN,
+      DEFAULT_SETTINGS.nuclearMobilePin
+    ) || DEFAULT_SETTINGS.nuclearMobilePin
+  ).trim() || DEFAULT_SETTINGS.nuclearMobilePin;
 }
 
 function subscribeSetting(id, callback) {
@@ -1890,6 +1961,20 @@ function setupSettingSubscriptions() {
       syncDetachedPlayer();
     }
   );
+
+  subscribeSetting(
+    SETTINGS_IDS.NUCLEAR_MOBILE_PEER,
+    (value) => {
+      state.settings.nuclearMobilePeer = String(value || "").trim();
+    }
+  );
+
+  subscribeSetting(
+    SETTINGS_IDS.NUCLEAR_MOBILE_PIN,
+    (value) => {
+      state.settings.nuclearMobilePin = String(value || "").trim() || DEFAULT_SETTINGS.nuclearMobilePin;
+    }
+  );
 }
 
 function applySettings() {
@@ -2014,6 +2099,15 @@ const ICONS = {
   <path d="M14 3h7v7"/>
   <path d="M21 10V4a1 1 0 0 0-1-1h-6"/>
   <path d="M10 21H4a1 1 0 0 1-1-1v-6"/>
+  </svg>
+  `,
+
+  mobile: `
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+  <rect x="7" y="2.5" width="10" height="19" rx="2"/>
+  <path d="M10 18.5h4"/>
+  <path d="M16 8h4"/>
+  <path d="m18 6 2 2-2 2"/>
   </svg>
   `,
 
@@ -2147,6 +2241,15 @@ function buildPlayer() {
     detach.id =
     "nuke-mp-detach-button";
 
+    const mobileHandoff = createButton(
+      "nuke-mp-icon-button",
+      text("sendToMobile"),
+      ICONS.mobile
+    );
+
+    mobileHandoff.id =
+    "nuke-mp-mobile-handoff-button";
+
       const fullscreen = createButton(
         "nuke-mp-icon-button",
         text("fullscreen"),
@@ -2166,6 +2269,7 @@ function buildPlayer() {
         "nuke-mp-close-button";
 
           headerActions.append(
+            mobileHandoff,
             detach,
             fullscreen,
             close
@@ -2606,6 +2710,15 @@ function bindPlayerEvents() {
   ?.addEventListener(
     "click",
     toggleDetachedPlayer
+  );
+
+  document
+  .getElementById(
+    "nuke-mp-mobile-handoff-button"
+  )
+  ?.addEventListener(
+    "click",
+    sendToNuclearMobile
   );
 
   document
@@ -3203,6 +3316,10 @@ function renderInterfaceText() {
     [
       "nuke-mp-lyrics-close",
       text("close")
+    ],
+    [
+      "nuke-mp-mobile-handoff-button",
+      text("sendToMobile")
     ]
   ];
 
@@ -3469,6 +3586,61 @@ async function restartCurrentItem() {
     );
 
     return false;
+  }
+}
+
+async function sendToNuclearMobile() {
+  const peer = String(state.settings.nuclearMobilePeer || "").trim();
+  const pin = String(state.settings.nuclearMobilePin || "").trim() || "424242";
+  if (!peer) {
+    setToast(text("handoffNoPeer"));
+    return;
+  }
+
+  const queue = state.queue || { items: [], currentIndex: -1 };
+  const items = Array.isArray(queue.items) ? queue.items : [];
+  const idx = Number.isInteger(queue.currentIndex) ? queue.currentIndex : -1;
+  const current = idx >= 0 ? items[idx] : null;
+  if (!current) {
+    setToast(text("handoffNoTrack"));
+    return;
+  }
+
+  const start = Math.max(0, idx - 5);
+  const slice = items.slice(start, start + 35);
+  const tracks = slice.map((item) => item?.track || item).filter(Boolean);
+  const relIndex = Math.max(0, idx - start);
+  const seekSec = Math.max(0, Number(state.playback?.seek) || 0);
+  const isPlaying = state.playback?.status === "playing";
+
+  const base = peer.replace(/\/+$/, "");
+  const url = /^https?:\/\//i.test(base)
+    ? `${base}/api/p2p/handoff`
+    : `http://${base}/api/p2p/handoff`;
+
+  try {
+    const res = await fetchJson(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-nuclear-pin": pin
+      },
+      body: JSON.stringify({ tracks, currentIndex: relIndex, seekSec, isPlaying })
+    });
+
+    if (!res) {
+      throw new Error("handoff failed");
+    }
+
+    if (api?.Playback?.pause) {
+      try { await api.Playback.pause(); } catch (_) {}
+    } else if (isPlaying) {
+      await togglePlayback();
+    }
+    setToast(text("handoffSent"));
+  } catch (error) {
+    log("nuclear-mobile handoff failed", error);
+    setToast(text("handoffFailed"));
   }
 }
 
